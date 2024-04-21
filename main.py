@@ -42,9 +42,41 @@ async def kb_answer(message: types.Message):
         await bot.send_message(chat_id=message.chat.id, text="Select an option:", reply_markup=info_keyboard())
     elif message.text == "💬 Support":
         await bot.send_message(chat_id=message.chat.id, text="https://t.me/proxybrokerr", reply_markup=keyboard_main)
+    elif message.text == "📜 Agreement":
+        await bot.send_message(chat_id=message.chat.id, text=agreement_text(), reply_markup=keyboard_main)
     else:
         await message.reply(f"Your message is: {message.text}")
 
+def agreement_text():
+    english_text = """
+## Proxy Rental Agreement
+
+By renting a mobile proxy from our service in Poland, you agree to the following terms and conditions:
+
+1. The proxy is provided for legitimate use only and must not be used for any illegal activities.
+2. The rental period and pricing will be as agreed upon during the purchase process.
+3. We do not guarantee 100% uptime of the proxy, but will strive to maintain high availability.
+4. In case of any issues with the proxy, please contact our support team for assistance.
+5. Refunds will be considered on a case-by-case basis and are not guaranteed.
+
+Thank you for choosing our mobile proxy rental service in Poland!
+"""
+
+    russian_text = """
+## Соглашение об аренде прокси
+
+Арендуя мобильный прокси у нашего сервиса в Польше, вы соглашаетесь со следующими условиями:
+
+1. Прокси предоставляется только для законного использования и не должен использоваться для каких-либо незаконных действий.
+2. Срок аренды и цены будут согласованы в процессе покупки.
+3. Мы не гарантируем 100% времени безотказной работы прокси, но будем стремиться поддерживать высокую доступность.
+4. В случае возникновения каких-либо проблем с прокси, пожалуйста, обратитесь в нашу службу поддержки за помощью.
+5. Возврат средств будет рассматриваться в каждом конкретном случае и не гарантируется.
+
+Благодарим вас за выбор нашего сервиса аренды мобильных прокси в Польше!
+"""
+
+    return f"{english_text}\n\n{russian_text}"
 #!PROXY INFO MENU
 @dp.callback_query_handler(lambda c: c.data.startswith('proxy'))
 async def process_proxy_selection(callback_query: types.CallbackQuery):
