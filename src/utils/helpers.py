@@ -4,8 +4,8 @@ from typing import List, Tuple
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
 
-
-from .bot_setup import *
+from ..bot.bot_setup import bot, client_message_mapping
+from ..bot.config import *
 from .custom_logging import WarsawTimeFormatter, CustomLoggingFilter
 
 
@@ -78,3 +78,33 @@ async def get_connection_info(connection_id):
 async def get_proxies(connection_id):
     response = requests.get(f"{BASE_API_URL}/connections/{connection_id}/proxies", headers=AUTH_HEADER)
     return response.json()["result"]
+
+
+
+# src/utils/helpers.py
+async def forward_message_to_admin(message):
+    try:
+        client_username = message.from_user.username
+        client_chat_id = message.chat.id
+        client_name = message.from_user.full_name
+
+        if client_username:
+            forwarded_message_text = f"@{client_username} (Chat ID: {client_chat_id})\n{message.text}"
+        else:
+            forwarded_message_text = f"{client_name} (Chat ID: {client_chat_id})\n{message.text}"
+
+        forwarded_message = await bot.send_message(chat_id=ADMIN_CHAT_ID, text=forwarded_message_text)
+        client_message_mapping[forwarded_message.message_id] = message
+    except Exception as e:
+        logging.exception(f"Error forwarding message to admin: {e}")
+
+async def send_reply_to_client(message):
+    try:
+        if message.reply_to_message and message.reply_to_message.message_id in client_message_mapping:
+            client_message = client_message_mapping[message.reply_to_message.message_id]
+            reply_text = f"Admin: {message.text}"
+            await bot.send_message(chat_id=client_message.chat.id, text=reply_text)
+        else:
+            logging.warning("Received admin message without a valid reply_to_message")
+    except Exception as e:
+        logging.exception(f"Error sending reply to client: {e}")

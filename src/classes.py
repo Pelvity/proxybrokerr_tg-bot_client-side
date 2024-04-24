@@ -1,7 +1,7 @@
 from aiogram.dispatcher.middlewares import BaseMiddleware
 from aiogram import types
 
-from .utils import log_user_interaction
+from .utils.helpers import log_user_interaction
 
 
 class LoggingMiddleware(BaseMiddleware):
