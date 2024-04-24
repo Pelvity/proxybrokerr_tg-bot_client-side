@@ -21,7 +21,7 @@ dp.middleware.setup(LoggingMiddleware(custom_logger))
 async def cmd_start(message: types.Message, state: FSMContext):
     await message.answer("Hello! I am Proxy Helper", reply_markup=keyboard_main)
 
-@dp.message_handler(lambda message: message.chat.id != ADMIN_CHAT_ID, content_types=types.ContentTypes.ANY)
+@dp.message_handler(content_types=types.ContentTypes.ANY)
 async def forward_client_message(message: types.Message):
     if message.text == "🌐 My Proxy":
         now = datetime.now()
@@ -41,6 +41,8 @@ async def forward_client_message(message: types.Message):
         await bot.send_message(chat_id=message.chat.id, text="Select an option:", reply_markup=info_keyboard())
     elif message.text == "📜 Agreement":
         await bot.send_message(chat_id=message.chat.id, text=agreement_text(), reply_markup=keyboard_main)
+    if message.chat.id == int(ADMIN_CHAT_ID) and message.reply_to_message:
+        await send_reply_to_client(message)
     else:
         await forward_message_to_admin(message)
 
