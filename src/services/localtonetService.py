@@ -6,23 +6,24 @@ from datetime import datetime
 from typing import List
 import json
 
-
 from .proxyServiceInterface import ProxyServiceInterface
-from .proxyModels import ProxyConnection, Proxy
+from ..bot.models.proxy_models import Proxy, ProxyConnection
+from src.db.models.db_models import DBProxyHistory, DBProxy, DBProxyConnection, User
+from peewee import IntegrityError
 
 dotenv_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config.env')
 load_dotenv(dotenv_path)
 
 # Now you can access the environment variables
 LOCALTONET_API_KEY = os.environ.get("LOCALTONET_API_KEY")
-BYBIT_API_KEY = os.environ.get("BYBIT_API_KEY")
 
 class LocaltonetManager(ProxyServiceInterface):
     def __init__(self, api_key):
         self.api_key = api_key
         self.base_url = "https://localtonet.com/api"
+        self.service_name = "ltn"
 
-    async def getConnections(self) -> List[ProxyConnection]:
+    async def getConnections(self) -> List[Proxy]:
         headers = {'Authorization': f'Bearer {self.api_key}'}
         response = requests.get(f"{self.base_url}/GetTunnels", headers=headers)
         if response.status_code == 200:
@@ -42,7 +43,7 @@ class LocaltonetManager(ProxyServiceInterface):
                     name = tunnel.get('authenticationUsername') or 'N/A'
                     external_user_id = tunnel.get('externalUserId', 'N/A') or 'N/A'
                     user = external_user_id.split('---')[1] if '---' in external_user_id else 'N/A'
-                    connection = ProxyConnection(
+                    connection = Proxy(
                         #id=tunnel['id'],
                         id=tunnel.get('id', ''),
                         name=name,
@@ -53,10 +54,11 @@ class LocaltonetManager(ProxyServiceInterface):
                         days_left=days_left,
                         hours_left=hours_left,
                         tariff_plan="Unlimited",
-                        tariff_expiration_date=None,
+                        tariff_expiration_date=datetime(3000,1,1),
                         tariff_days_left=None,
                         deviceModel=tunnel['authTokenName'],
-                        active = True if tunnel.get('status') == 1 else False
+                        active = True if tunnel.get('status') == 1 else False,
+                        service_name='ltn'
                     )
                     connections.append(connection)
                 # Sort connections by days left, if needed
@@ -67,7 +69,7 @@ class LocaltonetManager(ProxyServiceInterface):
         else:
             return f"Failed to fetch tunnels: {response.status_code}"
         
-    def getTunnelsByAuthToken(self, authtoken):
+    async def getTunnelsByAuthToken(self, authtoken):
         """
         Retrieves the list of tunnels associated with a specific authToken from LocalToneT.
         :param authtoken: The authToken to retrieve tunnels for.
@@ -87,8 +89,7 @@ class LocaltonetManager(ProxyServiceInterface):
                 return f"Error: {data.get('errors')}"
         else:
             return f"Failed to fetch tunnels by authToken: {response.status_code}"      
-        
-        
+         
     def getConnectionExpirationDate(self, tunnel_id):
         """
         Retrieves the expiration date of a tunnel from LocalToneT by its ID.
@@ -107,17 +108,17 @@ class LocaltonetManager(ProxyServiceInterface):
                 expiration_date_str = data.get("result", {}).get("expirationDate", None)
                 if expiration_date_str:
                     # Parse the date string into a datetime object
-                    print(repr(expiration_date_str))
-                    print(len(expiration_date_str))
+                    #print(repr(expiration_date_str))
+                    #print(len(expiration_date_str))
                     try:
                         # Trim the last character if the string length is 27
                         if len(expiration_date_str) == 27:
                             expiration_date_str = expiration_date_str[:-1]
                         expiration_date_obj = datetime.strptime(expiration_date_str, '%Y-%m-%d %H:%M:%S.%f')
-                        print(expiration_date_obj)
+                        #print(expiration_date_obj)
                     except ValueError as e:
                         print(f"Error parsing date: {e}")
-                    print(expiration_date_obj)
+                    #print(expiration_date_obj)
                     # Format the datetime object back into a string without fractional seconds
                     #formatted_expiration_date = expiration_date_obj.strftime('%Y-%m-%d %H:%M:%S')
                     return expiration_date_obj
@@ -128,7 +129,6 @@ class LocaltonetManager(ProxyServiceInterface):
         else:
             return f"Failed to fetch tunnel expiration date: {response.status_code}"
         
-
     async def getProxiesforConnection(self, authToken):
         """
         Fetches proxy details for a given authToken and returns a list of Proxy instances.
@@ -147,7 +147,7 @@ class LocaltonetManager(ProxyServiceInterface):
                 raw_proxies = data.get("result", [])
                 for proxy in raw_proxies:
                     # Create a Proxy instance for each item in raw_proxies
-                    proxy_instance = Proxy(
+                    proxy_instance = ProxyConnection(
                         id=proxy['id'],
                         userId=proxy.get('userId', ''),
                         createdTimestamp=proxy.get('createdTimestamp', 0),
@@ -161,7 +161,7 @@ class LocaltonetManager(ProxyServiceInterface):
                         type=proxy.get('protocolType', ''),
                         connectionId=proxy.get('guidId', ''),  # Assuming this is the connection ID
                         active=proxy.get('status', False) == 1,  # Assuming status 1 means active
-                        deviceModel=proxy.get('authTokenName', '')
+                        #deviceModel=proxy.get('authTokenName', '')
                     )
                     proxies.append(proxy_instance)
             else:
@@ -170,7 +170,6 @@ class LocaltonetManager(ProxyServiceInterface):
             print(f"Failed to fetch tunnels by authToken: {response.status_code}")
 
         return proxies
-
 
     async def setExpirationDateForConnection(self, tunnelId: str, new_expirationDate: datetime) -> str:
         """
@@ -215,18 +214,62 @@ class LocaltonetManager(ProxyServiceInterface):
                 return f"Error: {error_messages}"
         else:
             return f"Failed to set expiration date: HTTP {response.status_code}"
+    
+    async def sync_connections(self):
+        connections = await self.getConnections()
+        for connection in connections:
+            user, user_created = User.get_or_create(
+                username = connection.user.lstrip('@') if connection.user else None,
+                defaults = {
+                    'first_name': getattr(connection, 'first_name', None),  # Use None if 'first_name' is not available
+                    'last_name': getattr(connection, 'last_name', None),
+                    'joined_at': datetime.now(),  # Use the current time as the join date if not provided
+                    'is_active': True  # Default to True if not specified
+                }
+            )
 
+            try:
+                proxy, created = DBProxy.get_or_create(
+                    auth_token=connection.id,  # Assuming auth_token is unique
+                    defaults={
+                        'name': connection.name,
+                        'user': user.id,  # Link to the user record
+                        'expiration_date': connection.expiration_date,
+                        'tariff_plan': connection.tariff_plan,
+                        'tariff_expiration_date': connection.tariff_expiration_date,
+                        'days_left': connection.days_left,
+                        'hours_left': connection.hours_left,
+                        'device_model': connection.deviceModel,
+                        'active': connection.active,
+                        'service_name': 'ltn'
+                    }
+                )
+                if not created:
+                    update_proxy_data(proxy, connection, user)
+            except IntegrityError as e:
+                print(f"Failed to create or update DBProxy due to IntegrityError: {e}")
 
-
-
-
-
-
-
-
-
-
-
+def update_proxy_data(proxy, connection, user):
+    # Save the old data in history before updating
+    DBProxyHistory.create(
+        proxy=proxy,
+        user=user,  # Link to the user
+        service_name=proxy.service_name,
+        connection_id=proxy.id,
+        name=proxy.name,
+        expiration_date=proxy.expiration_date,
+        tariff_plan=proxy.tariff_plan,
+        tariff_expiration_date=proxy.tariff_expiration_date,
+        created_at=proxy.created_at,
+        updated_at=datetime.now()
+    )
+    # Update the proxy with new data
+    proxy.name = connection.name
+    proxy.expiration_date = connection.expiration_date
+    proxy.tariff_plan = connection.tariff_plan
+    proxy.tariff_expiration_date = connection.tariff_expiration_date
+    proxy.updated_at = datetime.now()
+    proxy.save()
 
 # Example usage:
 def main():

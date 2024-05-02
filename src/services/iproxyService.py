@@ -2,7 +2,7 @@ import logging
 import requests
 from datetime import datetime, timedelta
 from src.services.proxyServiceInterface import ProxyServiceInterface
-from src.services.proxyModels import ProxyConnection, Proxy
+from src.bot.models.proxy_models import Proxy, ProxyConnection
 from typing import List, Tuple
 import json
 import aiohttp
@@ -12,13 +12,16 @@ import pandas as pd
 from aiohttp import ClientResponseError, ClientConnectorError, ClientPayloadError, ServerDisconnectedError, ClientTimeout
 import asyncio
 import os
+from peewee import IntegrityError 
+
+from src.db.models.db_models import DBProxy, DBProxyHistory, User
 
 class IProxyManager(ProxyServiceInterface):
     def __init__(self, api_key):
         self.api_key = api_key
         self.base_url = "https://api.iproxy.online/v1"
 
-    async def getConnections(self) -> List[ProxyConnection]:
+    async def getConnections(self) -> List[Proxy]:
         headers = {'Authorization': self.api_key}
         response = requests.get(f"{self.base_url}/connections", headers=headers)
         result = response.json()["result"]
@@ -38,12 +41,13 @@ class IProxyManager(ProxyServiceInterface):
             days_left = (expiration_date - now).days
             tariff_days_left = (tariff_expiration_date - now + timedelta(days=1)).days
             hours_left = (expiration_date - now).seconds // 3600
-            connection = ProxyConnection(
+            connection = Proxy(
                 id=conn['id'],
                 name=name,
                 authToken=conn.get('id', ''),  # Use empty string as default if 'id' is missing
                 proxies=[],  # Fetch and add actual proxies if needed
                 user=conn.get('description', ''),  # Use empty string as default if 'description' is missing
+                #user_id = user_id,
                 expiration_date=expiration_date or None,  # Use None as default if expiration_date is not available
                 days_left=days_left or 0,  # Use 0 as default if days_left is not available
                 hours_left=hours_left or 0,  # Use 0 as default if hours_left is not available
@@ -51,7 +55,8 @@ class IProxyManager(ProxyServiceInterface):
                 tariff_expiration_date=tariff_expiration_date or None,  # Use None as default if tariff_expiration_date is not available
                 tariff_days_left=tariff_days_left or 0,  # Use 0 as default if tariff_days_left is not available
                 deviceModel=conn.get('deviceModel', ''),  # Use empty string as default if 'deviceModel' is missing
-                active=conn.get('active', 0)  # Use 0 as default if 'active' is missing
+                active=conn.get('active', 0),  # Use 0 as default if 'active' is missing
+                service_name='ipr'
             )
 
             connections.append(connection)
@@ -66,14 +71,14 @@ class IProxyManager(ProxyServiceInterface):
         # Implement logic to fetch expiration date for a given connection_id
         pass
 
-    async def getProxiesforConnection(self, connection_id) -> List[Proxy]:
+    async def getProxiesforConnection(self, connection_id) -> List[ProxyConnection]:
         headers = {'Authorization': self.api_key}
         response = requests.get(f"{self.base_url}/connections/{connection_id}/proxies", headers=headers)
         proxies = []
         if response.status_code == 200:
             data = json.loads(response.text).get("result", [])
             for item in data:
-                proxy = Proxy(
+                proxy = ProxyConnection(
                     id=item.get('id'),
                     userId=item.get('userId'),
                     createdTimestamp=item.get('createdTimestamp'),
@@ -244,8 +249,6 @@ class IProxyManager(ProxyServiceInterface):
                     logging.error(error_message)
                     return 0, 0, "N/A", b"", error_message """
 
-    
-
     async def getTrafficData(self, connection_id: str, from_timestamp: int, to_timestamp: int) -> Tuple[int, int, str, str]:
         url = f"https://iproxy.online/api-rt/phone/{connection_id}/logs-csv?from={from_timestamp}&to={to_timestamp}&name={connection_id}-{from_timestamp}_{to_timestamp}-logs.csv&&token=r:d5686a473a462e5aec393cdc7386033c"
         
@@ -309,6 +312,64 @@ class IProxyManager(ProxyServiceInterface):
                     error_message = f"Failed to fetch traffic data for connection {connection_id} after {max_retries} attempts. Error: {str(e)}"
                     logging.error(error_message)
                     return 0, 0, "N/A", "", error_message
+
+    async def sync_connections(self):
+        connections = await self.getConnections()
+        for connection in connections:
+            user, user_created = User.get_or_create(
+                username = connection.user.lstrip('@') if connection.user else None,
+                defaults = {
+                    'first_name': getattr(connection, 'first_name', None),  # Use None if 'first_name' is not available
+                    'last_name': getattr(connection, 'last_name', None),
+                    'joined_at': datetime.now(),  # Use the current time as the join date if not provided
+                    'is_active': True  # Default to True if not specified
+                }
+            )
+
+            try:
+                proxy, created = DBProxy.get_or_create(
+                    auth_token=connection.id,  # Assuming auth_token is unique
+                    defaults={
+                        'name': connection.name,
+                        'user': user.id,  # Link to the user record
+                        'expiration_date': connection.expiration_date,
+                        'tariff_plan': connection.tariff_plan,
+                        'tariff_expiration_date': connection.tariff_expiration_date,
+                        'days_left': connection.days_left,
+                        'hours_left': connection.hours_left,
+                        'device_model': connection.deviceModel,
+                        'active': connection.active,
+                        'service_name': 'ipr'
+                    }
+                )
+                if not created:
+                    update_proxy_data(proxy, connection, user)
+            except IntegrityError as e:
+                print(f"Failed to create or update DBProxy due to IntegrityError: {e}")
+
+def update_proxy_data(proxy, connection, user):
+    # Save the old data in history before updating
+    DBProxyHistory.create(
+        proxy=proxy,
+        user=user,  # Link to the user
+        service_name=proxy.service_name,
+        connection_id=proxy.id,
+        name=proxy.name,
+        expiration_date=proxy.expiration_date,
+        tariff_plan=proxy.tariff_plan,
+        tariff_expiration_date=proxy.tariff_expiration_date,
+        created_at=proxy.created_at,
+        updated_at=datetime.now()
+    )
+    # Update the proxy with new data
+    proxy.name = connection.name
+    proxy.expiration_date = connection.expiration_date
+    proxy.tariff_plan = connection.tariff_plan
+    proxy.tariff_expiration_date = connection.tariff_expiration_date
+    proxy.updated_at = datetime.now()
+    proxy.save()
+
+
 
 
 

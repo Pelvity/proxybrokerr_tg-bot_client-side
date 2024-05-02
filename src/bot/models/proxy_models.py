@@ -4,7 +4,7 @@ from datetime import datetime
 
 
 @dataclass
-class Proxy:
+class ProxyConnection:
     id: str
     userId: str
     createdTimestamp: int
@@ -20,11 +20,11 @@ class Proxy:
     active: bool
 
 @dataclass
-class ProxyConnection:
+class Proxy:
     id: int
     name: str
     authToken: str
-    proxies: List[Proxy]
+    proxies: List[ProxyConnection]
     user: str  # Extracted username part
     expiration_date: datetime  # The expiration date of the proxy connection
     days_left: int  # The number of days left until expiration
@@ -34,4 +34,4 @@ class ProxyConnection:
     tariff_days_left: int
     deviceModel: str
     active: bool
-    
+    service_name: str

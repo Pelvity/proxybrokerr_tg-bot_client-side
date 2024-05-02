@@ -1,0 +1,13 @@
+good. 
+1. user table should also have columns for last time user message in bot 
+2. status (if client is active or is it ex client already)
+3. "Clients" button in main menu for admin only that would print out buttons menu with all clients (each button means chat with exact client). after admin choose client than it "opens" chat with exact client (start resending 
+
+
+also i want to save user payments history but i don't have automatical payment system so im planning so it be like that for now:
+1. User get notification about proxy renting end in bot with "Payed" button
+2. User make payment manually (for example on binance) and press "Payed"
+3. Admin get notification about payment (like "User ... payed for proxy ... rent from date ... to date ....) with "Confirm" button
+4. Admin manually check payment and press "Confirm" if everything ok 
+5. payment is saved in db
+
