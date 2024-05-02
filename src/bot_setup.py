@@ -16,5 +16,3 @@ lifetime_controller_middleware = LifetimeControllerMiddleware()
 
 # Register the middleware with the dispatcher
 dp.middleware.setup(lifetime_controller_middleware)
-
-client_message_mapping = {}

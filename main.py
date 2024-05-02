@@ -1,13 +1,12 @@
-# main.py
 from datetime import datetime
 from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import Command
 from aiogram.utils import executor
-from src.bot.config import *
+from src.config import *
 from src.classes import *
-from src.utils.helpers import *
-from src.bot.bot_setup import *
+from src.utils import *
+from src.bot_setup import *
 from src.startup_shutdown import *
 from src.keyboards import *
 
@@ -17,12 +16,14 @@ custom_logger = create_custom_logger()
 dp.middleware.setup(LoggingMiddleware(custom_logger))
 
 # Register the command handler and attach the keyboard to the message
+
+
 @dp.message_handler(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
     await message.answer("Hello! I am Proxy Helper", reply_markup=keyboard_main)
 
-@dp.message_handler(content_types=types.ContentTypes.ANY)
-async def forward_client_message(message: types.Message):
+@dp.message_handler()
+async def kb_answer(message: types.Message):
     if message.text == "🌐 My Proxy":
         now = datetime.now()
         result = await get_connections()
@@ -39,17 +40,13 @@ async def forward_client_message(message: types.Message):
             await send_proxies(message.chat.id, proxies)
     elif message.text == "ℹ️ Info":
         await bot.send_message(chat_id=message.chat.id, text="Select an option:", reply_markup=info_keyboard())
+    elif message.text == "💬 Support":
+        await bot.send_message(chat_id=message.chat.id, text="https://t.me/proxybrokerr", reply_markup=keyboard_main)
     elif message.text == "📜 Agreement":
         await bot.send_message(chat_id=message.chat.id, text=agreement_text(), reply_markup=keyboard_main)
-    if message.chat.id == int(ADMIN_CHAT_ID) and message.reply_to_message:
-        await send_reply_to_client(message)
     else:
-        await forward_message_to_admin(message)
+        await message.reply(f"Your message is: {message.text}")
 
-@dp.message_handler(lambda message: message.chat.id == ADMIN_CHAT_ID and message.reply_to_message, content_types=types.ContentTypes.ANY)
-async def handle_admin_reply(message: types.Message):
-    await send_reply_to_client(message)
-    
 def agreement_text():
     english_text = """
 ## Proxy Rental Agreement
@@ -184,7 +181,6 @@ async def handle_callback_query(callback_query: types.CallbackQuery):
 
     # Acknowledge the callback query
     await bot.answer_callback_query(callback_query.id)
-    
 
 if __name__ == "__main__":
     from aiogram import executor

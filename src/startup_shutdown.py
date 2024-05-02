@@ -1,5 +1,5 @@
 import logging
-from .bot.bot_setup import bot, dp, ADMIN_CHAT_ID, WEBHOOK_URL, PORT
+from .bot_setup import bot, dp, ADMIN_CHAT_ID, WEBHOOK_URL, PORT
 
 async def on_startup(dp):
     if WEBHOOK_URL:  # If WEBHOOK_URL is set, use webhook mode
