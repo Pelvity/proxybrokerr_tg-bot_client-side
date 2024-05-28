@@ -7,11 +7,12 @@ from datetime import datetime
 class ProxyConnection:
     id: str
     userId: str
-    createdTimestamp: int
-    updatedTimestamp: int
+    created_timestamp: int
+    updated_timestamp: int
     name: str
     description: str
-    ip: str
+    user: str
+    host: str
     port: int
     login: str
     password: str
@@ -35,3 +36,4 @@ class Proxy:
     deviceModel: str
     active: bool
     service_name: str
+    description: str

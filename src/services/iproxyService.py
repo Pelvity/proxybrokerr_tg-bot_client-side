@@ -1,8 +1,6 @@
 import logging
 import requests
-from datetime import datetime, timedelta
-from src.services.proxyServiceInterface import ProxyServiceInterface
-from src.bot.models.proxy_models import Proxy, ProxyConnection
+from datetime import datetime, timedelta, timezone
 from typing import List, Tuple
 import json
 import aiohttp
@@ -13,15 +11,26 @@ from aiohttp import ClientResponseError, ClientConnectorError, ClientPayloadErro
 import asyncio
 import os
 from peewee import IntegrityError 
+from typing import Optional
 
-from src.db.models.db_models import DBProxy, DBProxyHistory, User
+#from src.db.models.db_models import Proxy, ProxyHistory, User, ProxyConnection, UserType
+from src.services.proxyServiceInterface import ProxyServiceInterface
+from src.bot.models.proxy_models import Proxy, ProxyConnection
+from src.db.models.db_models import ConnectionHistory, User,UserType, DBProxy, DBProxyConnection
+from src.db.db_utils import update_connection, update_proxy
+from src.db.azure_db import AzureSQLService
+from src.db.repositories.user_repositories import UserRepository 
+
+database_service = AzureSQLService() 
 
 class IProxyManager(ProxyServiceInterface):
     def __init__(self, api_key):
         self.api_key = api_key
         self.base_url = "https://api.iproxy.online/v1"
+        self.service_name = "ipr"
+        #self.user_repository = UserRepository(self.session) 
 
-    async def getConnections(self) -> List[Proxy]:
+    async def getAllProxies(self) -> List[Proxy]:
         headers = {'Authorization': self.api_key}
         response = requests.get(f"{self.base_url}/connections", headers=headers)
         result = response.json()["result"]
@@ -47,6 +56,7 @@ class IProxyManager(ProxyServiceInterface):
                 authToken=conn.get('id', ''),  # Use empty string as default if 'id' is missing
                 proxies=[],  # Fetch and add actual proxies if needed
                 user=conn.get('description', ''),  # Use empty string as default if 'description' is missing
+                description=conn.get('description', ''),  # Use empty string as default if 'description' is missing
                 #user_id = user_id,
                 expiration_date=expiration_date or None,  # Use None as default if expiration_date is not available
                 days_left=days_left or 0,  # Use 0 as default if days_left is not available
@@ -71,7 +81,7 @@ class IProxyManager(ProxyServiceInterface):
         # Implement logic to fetch expiration date for a given connection_id
         pass
 
-    async def getProxiesforConnection(self, connection_id) -> List[ProxyConnection]:
+    async def getConnectionsOfProxy(self, connection_id) -> List[ProxyConnection]:
         headers = {'Authorization': self.api_key}
         response = requests.get(f"{self.base_url}/connections/{connection_id}/proxies", headers=headers)
         proxies = []
@@ -81,11 +91,12 @@ class IProxyManager(ProxyServiceInterface):
                 proxy = ProxyConnection(
                     id=item.get('id'),
                     userId=item.get('userId'),
-                    createdTimestamp=item.get('createdTimestamp'),
-                    updatedTimestamp=item.get('updatedTimestamp'),
+                    created_timestamp=item.get('createdTimestamp'),
+                    updated_timestamp=item.get('updatedTimestamp'),
                     name=item.get('name'),
                     description=item.get('description'),
-                    ip=item.get('ip'),
+                    user=item.get('description'),
+                    host=item.get('ip'),
                     port=item.get('port'),
                     login=item.get('login'),
                     password=item.get('password'),
@@ -128,7 +139,7 @@ class IProxyManager(ProxyServiceInterface):
         :return: A success message or an error message.
         """
         # Fetch the list of proxies for the connection
-        proxies_list = await self.getProxiesforConnection(connection_id)
+        proxies_list = await self.getConnectionsOfProxy(connection_id)
         if not proxies_list:
             return "Failed to fetch connection info."
 
@@ -175,7 +186,7 @@ class IProxyManager(ProxyServiceInterface):
     async def update_tariffs_to_big_daddy_pro(self):
         logging.info("Starting the update_tariffs_to_big_daddy_pro method.")
         try:
-            connections = await self.getConnections()
+            connections = await self.getAllProxies()
             if connections:
                 logging.info(f"Found {len(connections)} connections to check for tariff updates.")
             else:
@@ -206,48 +217,6 @@ class IProxyManager(ProxyServiceInterface):
                     logging.info(f"No update needed for {conn.name}. Tariff days are sufficient.")
         except Exception as e:
             logging.error(f"An error occurred during the tariff update process: {str(e)}")
-
-    """ async def get_traffic_data(self, connection_id: str, from_timestamp: int, to_timestamp: int) -> Tuple[int, int, str, bytes]:
-        url = f"https://iproxy.online/api-rt/phone/{connection_id}/logs-csv?from={from_timestamp}&to={to_timestamp}&name={connection_id}-{from_timestamp}_{to_timestamp}-logs.csv&&token=r:d5686a473a462e5aec393cdc7386033c"
-        
-        max_retries = 3
-        retry_delay = 5
-        timeout = 10
-        
-        for attempt in range(max_retries):
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url, timeout=timeout) as response:
-                        if response.status != 200:
-                            error_message = f"Error fetching traffic data for connection {connection_id}. Status code: {response.status}"
-                            logging.error(error_message)
-                            return 0, 0, "N/A", b"", error_message
-                        
-                        zip_data = await response.read()
-                
-                zip_file = zipfile.ZipFile(io.BytesIO(zip_data))
-                csv_file = zip_file.open(zip_file.namelist()[0])
-                
-                data = pd.read_csv(csv_file)
-                
-                total_tx_bytes = data['TxBytes'].sum()
-                total_rx_bytes = data['RxBytes'].sum()
-                
-                if not data.empty and 'ReqHost' in data.columns and data['ReqHost'].notnull().any():
-                    most_used_service = data['ReqHost'].value_counts().idxmax()
-                else:
-                    most_used_service = "N/A"
-                
-                return total_tx_bytes, total_rx_bytes, most_used_service, zip_data, None
-            
-            except (ClientResponseError, ClientConnectorError, ClientPayloadError, ServerDisconnectedError, zipfile.BadZipFile, asyncio.TimeoutError) as e:
-                if attempt < max_retries - 1:
-                    logging.warning(f"Error fetching traffic data for connection {connection_id}. Retrying in {retry_delay} seconds...")
-                    await asyncio.sleep(retry_delay)
-                else:
-                    error_message = f"Failed to fetch traffic data for connection {connection_id} after {max_retries} attempts. Error: {str(e)}"
-                    logging.error(error_message)
-                    return 0, 0, "N/A", b"", error_message """
 
     async def getTrafficData(self, connection_id: str, from_timestamp: int, to_timestamp: int) -> Tuple[int, int, str, str]:
         url = f"https://iproxy.online/api-rt/phone/{connection_id}/logs-csv?from={from_timestamp}&to={to_timestamp}&name={connection_id}-{from_timestamp}_{to_timestamp}-logs.csv&&token=r:d5686a473a462e5aec393cdc7386033c"
@@ -314,68 +283,138 @@ class IProxyManager(ProxyServiceInterface):
                     return 0, 0, "N/A", "", error_message
 
     async def sync_connections(self):
-        connections = await self.getConnections()
-        for connection in connections:
-            user, user_created = User.get_or_create(
-                username = connection.user.lstrip('@') if connection.user else None,
-                defaults = {
-                    'first_name': getattr(connection, 'first_name', None),  # Use None if 'first_name' is not available
-                    'last_name': getattr(connection, 'last_name', None),
-                    'joined_at': datetime.now(),  # Use the current time as the join date if not provided
-                    'is_active': True  # Default to True if not specified
-                }
+        """Synchronizes proxy connections from the IProxy API."""
+        try:
+            api_proxies = await self.getAllProxies()
+
+            with database_service.get_session() as session:
+                user_repository = UserRepository(session)
+                for api_proxy in api_proxies:
+                    user = await self._get_or_create_user_from_proxy(session, user_repository, api_proxy)
+                    if user is None: 
+                        print(f"Skipping proxy {api_proxy.id} due to user resolution issue.")
+                        continue
+
+                    db_proxy = self._get_or_create_proxy(session, api_proxy, user)
+                    api_connections = await self.getConnectionsOfProxy(api_proxy.authToken)
+                    #self._sync_proxy_connections(session, db_proxy, api_connections, user_repository)  # Pass user_repository here
+                    await self._sync_proxy_connections(
+                        session, db_proxy, api_connections, user_repository
+                    )  # Call the function
+
+        except IntegrityError as e:
+            print(
+                f"Failed to create or update DBProxy or DBProxyConnection due to IntegrityError: {e}"
             )
+        except Exception as e:
+            print(f"An error occurred while syncing connections: {e}")
+    
+    async def _get_or_create_user_from_proxy(self, session, user_repository, api_proxy) -> Optional[User]:
+        """Fetches or creates a user based on API proxy data (username only)."""
+        user = user_repository.get_or_create_user_by_username(session, api_proxy.user) 
+        return user
+    
+    def _get_or_create_proxy(self, session, api_proxy, user):
+        """Gets or creates a DBProxy based on the API proxy data."""
+        db_proxy = session.query(DBProxy).filter_by(id=api_proxy.id).first()
+        if db_proxy is None:
+            db_proxy = DBProxy(
+                id=api_proxy.id,
+                phone_id=None,  
+                name=api_proxy.name,
+                # user_id=user.id,  # REMOVE THIS LINE - no longer in DBProxy
+                expiration_date=api_proxy.expiration_date,
+                #hours_left=api_proxy.hours_left,
+                tariff_plan=api_proxy.tariff_plan,
+                tariff_expiration_date=api_proxy.tariff_expiration_date,
+                tariff_days_left=api_proxy.tariff_days_left,
+                device_model=api_proxy.deviceModel,
+                active=api_proxy.active,
+                service_name='ipr',
+            )
+            session.add(db_proxy)
+            session.commit()
+        else:
+            update_proxy(db_proxy, api_proxy.__dict__, session)
+        return db_proxy
+    
+    async def _sync_proxy_connections(self, session, db_proxy, api_connections, user_repository):
+        """Synchronizes DBProxyConnection records - handles user association."""
+        api_connection_ids = {api_connection.id for api_connection in api_connections}
 
-            try:
-                proxy, created = DBProxy.get_or_create(
-                    auth_token=connection.id,  # Assuming auth_token is unique
-                    defaults={
-                        'name': connection.name,
-                        'user': user.id,  # Link to the user record
-                        'expiration_date': connection.expiration_date,
-                        'tariff_plan': connection.tariff_plan,
-                        'tariff_expiration_date': connection.tariff_expiration_date,
-                        'days_left': connection.days_left,
-                        'hours_left': connection.hours_left,
-                        'device_model': connection.deviceModel,
-                        'active': connection.active,
-                        'service_name': 'ipr'
-                    }
-                )
-                if not created:
-                    update_proxy_data(proxy, connection, user)
-            except IntegrityError as e:
-                print(f"Failed to create or update DBProxy due to IntegrityError: {e}")
+        for api_connection in api_connections:
+            created_datetime = datetime.fromtimestamp(api_connection.created_timestamp / 1000)
+            user = user_repository.get_or_create_user_by_username(session, api_connection.user)
 
-def update_proxy_data(proxy, connection, user):
-    # Save the old data in history before updating
-    DBProxyHistory.create(
-        proxy=proxy,
-        user=user,  # Link to the user
-        service_name=proxy.service_name,
-        connection_id=proxy.id,
-        name=proxy.name,
-        expiration_date=proxy.expiration_date,
-        tariff_plan=proxy.tariff_plan,
-        tariff_expiration_date=proxy.tariff_expiration_date,
-        created_at=proxy.created_at,
-        updated_at=datetime.now()
-    )
-    # Update the proxy with new data
-    proxy.name = connection.name
-    proxy.expiration_date = connection.expiration_date
-    proxy.tariff_plan = connection.tariff_plan
-    proxy.tariff_expiration_date = connection.tariff_expiration_date
-    proxy.updated_at = datetime.now()
-    proxy.save()
+            connection_data = { 
+                'id': api_connection.id,
+                'proxy_id': db_proxy.id,
+                'user_id': user.id if user else None,
+                'created_timestamp': created_datetime,
+                'name': api_connection.name,
+                'description': api_connection.description,
+                'host': getattr(api_connection, 'host', ''),
+                'port': getattr(api_connection, 'port', 0),
+                'login': getattr(api_connection, 'login', ''),
+                'password': getattr(api_connection, 'password', ''),
+                'connection_type': getattr(api_connection, 'type', ''),
+                'active': api_connection.active,
+                'deleted': False,
+            }
 
+            db_connection = session.query(DBProxyConnection).filter_by(id=api_connection.id).first()
 
+            if db_connection is None:
+                # New connection, create history entry
+                db_connection = DBProxyConnection(**connection_data)
+                session.add(db_connection)
+                self._create_connection_history(session, db_connection) 
+            else:
+                if self._has_connection_data_changed(db_connection, connection_data):
+                    # Connection data changed, create history entry
+                    self._create_connection_history(session, db_connection)
+                    # Update connection data
+                    for key, value in connection_data.items():
+                        setattr(db_connection, key, value)
+                    db_connection.updated_timestamp = datetime.now(timezone.utc)
 
+        # Mark connections as deleted if not found in the API data 
+        deleted_connections = (
+            session.query(DBProxyConnection)
+            .filter(
+                DBProxyConnection.proxy_id == db_proxy.id,
+                DBProxyConnection.id.notin_(api_connection_ids),
+            )
+            .all()
+        )
+        for deleted_connection in deleted_connections:
+            self._create_connection_history(session, deleted_connection)
+            deleted_connection.deleted = True 
 
+        session.commit()
 
+    def _has_connection_data_changed(self, db_connection, connection_data):
+        """Check if relevant connection data has changed."""
+        for attr in [
+            'name', 'description', 'host', 'port', 'login', 'password', 
+            'connection_type', 'user_id'
+        ]:
+            if getattr(db_connection, attr) != connection_data.get(attr):
+                return True
+        return False
 
-
-
-
-
-
+    def _create_connection_history(self, session, db_connection):
+        """Create a new connection history entry."""
+        new_history = ConnectionHistory(
+            connection_id=db_connection.id,
+            user_id=db_connection.user_id,  # Store user_id in history
+            name=db_connection.name,
+            description=db_connection.description,
+            host=db_connection.host,
+            port=db_connection.port,
+            login=db_connection.login,
+            password=db_connection.password,
+            connection_type=db_connection.connection_type,
+            active = db_connection.active,
+        )
+        session.add(new_history)

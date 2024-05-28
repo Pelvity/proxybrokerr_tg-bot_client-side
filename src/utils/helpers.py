@@ -102,20 +102,6 @@ Thank you for choosing our mobile proxy rental service in Poland!
 
 """ PAYMENT """
 
-# src/utils/helpers.py
-from aiogram import Bot, types
-
-async def send_payment_confirmation_message_to_admin(payment):
-    bot = Bot.get_current()
-    message_text = f"Payment received: {payment.amount} from {payment.user.username}. Confirm?"
-    confirm_button = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("Confirm", callback_data=f"confirm_payment_{payment.id}"))
-    await bot.send_message(ADMIN_CHAT_ID, message_text, reply_markup=confirm_button)
-
-async def send_payment_confirmation_message_to_user(user, payment):
-    bot = Bot.get_current()
-    message_text = f"Your payment of {payment.amount} has been confirmed. New expiration date: {payment.proxy.expiration_date}"
-    await bot.send_message(user.chat_id, message_text)
-
 
 # src/utils/helpers.py
 # src/utils/helpers.py
@@ -126,7 +112,7 @@ from peewee import DoesNotExist
 async def get_user_from_callback(callback_query: CallbackQuery) -> User:
     user_id = callback_query.from_user.id
     try:
-        user = User.get(User.id == user_id)
+        user = User.get(User.telegram_user_id == user_id)
         return user
     except DoesNotExist:
         # Handle the case where the user is not found in the database

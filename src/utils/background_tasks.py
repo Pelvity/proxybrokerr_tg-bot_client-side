@@ -10,7 +10,7 @@ localtonet_manager = LocaltonetManager(LOCALTONET_API_KEY)
 async def sync_proxy_connections():
     while True:
         print("Syncing db with services...")
-        await iproxy_manager.sync_connections()
-        await localtonet_manager.sync_connections()
+        #await iproxy_manager.sync_connections()
+        #await localtonet_manager.sync_connections()
         print("Db synced!")
         await asyncio.sleep(3600)  # Synchronize every hour

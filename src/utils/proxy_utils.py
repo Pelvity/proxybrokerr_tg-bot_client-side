@@ -1,38 +1,41 @@
-# src/utils/proxy_utils.py
-
 from datetime import datetime
 from typing import List, Tuple
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
+
 from src.bot.bot_setup import bot
 from src.bot.config import BASE_API_URL, AUTH_HEADER
-from src.bot.models.proxy_models import Proxy
-from src.db.models.db_models import *
+from src.db.repositories.proxy_repositories import ProxyRepository
+from src.db.repositories.connection_repositories import ConnectionRepository 
+from src.db.models.db_models import User, DBProxy, DBProxyConnection
+from src.db.repositories.user_repositories import UserRepository
 
-def parse_proxy_names(proxy_names: List[str], user_connections: List[dict], now: datetime) -> List[Tuple]:
-    parsed = [
-        (
-            name_desc.split(" - ")[0],
-            name_desc.split(" - ")[1],
-            (datetime.strptime(name_desc.split(" - ")[1], "%d/%m/%Y") - now).days,
-            (datetime.strptime(name_desc.split(" - ")[1], "%d/%m/%Y") - now).seconds // 3600,
-            conn["id"],
-        )
-        for name_desc, conn in zip(proxy_names, user_connections)
-    ]
-    parsed.sort(key=lambda x: x[1])
-    return parsed
+user_selections = {}  # Store user proxy selections
 
-async def send_proxies(chat_id: int, proxies: List[Proxy]):
+# async def send_proxies(chat_id: int, proxies: List[DBProxy]):
+#     buttons = [
+#         InlineKeyboardButton(
+#             text=f"{proxy.name} | {proxy.expiration_date.strftime('%d/%m/%Y')} | {proxy.days_left} days left",
+#             callback_data=f"proxy_{proxy.service_name}_{proxy.auth_token}_{proxy.id}",  
+#         ) 
+#         for proxy in proxies
+#     ]
+
+#     keyboard = InlineKeyboardMarkup(row_width=1).add(*buttons)
+#     await bot.send_message(chat_id=chat_id, text="Your Proxies:", reply_markup=keyboard)
+
+
+async def send_proxies(chat_id: int, connections: List[DBProxyConnection]):  
     buttons = [
         InlineKeyboardButton(
-            text=f"{proxy.name} | {proxy.expiration_date.strftime('%d/%m/%Y')} | {proxy.days_left} days {proxy.hours_left} hours left",
-            callback_data=f"proxy_{proxy.service_name}_{proxy.authToken}_{i + 1}",
-        )
-        for i, proxy in enumerate(proxies)
+            text=f"{connection.proxy.name} | {connection.proxy.expiration_date.strftime('%d/%m/%Y')} | {connection.proxy.days_left} days left",
+            callback_data=f"proxy_{connection.proxy.service_name}_{connection.proxy.auth_token}_{connection.proxy.id}",  
+        ) 
+        for connection in connections
     ]
+
     keyboard = InlineKeyboardMarkup(row_width=1).add(*buttons)
-    await bot.send_message(chat_id=chat_id, text="Proxy:", reply_markup=keyboard)
+    await bot.send_message(chat_id=chat_id, text="Your Connections:", reply_markup=keyboard)
 
 async def get_connections():
     response = requests.get(f"{BASE_API_URL}/connections", headers=AUTH_HEADER)
@@ -46,67 +49,65 @@ async def get_proxies(connection_id):
     response = requests.get(f"{BASE_API_URL}/connections/{connection_id}/proxies", headers=AUTH_HEADER)
     return response.json()["result"]
 
-# src/utils/proxy_utils.py
-
-# src/utils/proxy_utils.py
-from src.db.models.db_models import DBProxy
-
-# This dictionary will store the proxy selections for each user.
-# The keys are user_ids and the values are sets of selected proxy_ids.
-user_selections = {}
-
 def toggle_proxy_selection(user_id, proxy_id):
-    # Retrieve the current selections for the user, or initialize with an empty set
+    """Toggles proxy selection for a user."""
     current_selections = user_selections.get(user_id, set())
-    
-    # Toggle the proxy_id in the set
     if proxy_id in current_selections:
         current_selections.remove(proxy_id)
     else:
         current_selections.add(proxy_id)
-    
-    # Update the user_selections dictionary
     user_selections[user_id] = current_selections
     return current_selections
 
-def get_all_proxies():
-    # Fetch all proxies from the DBProxy model
-    return list(DBProxy.select())
-
 def get_selected_proxies(user_id):
-    # Return the set of selected proxy IDs for the user
+    """Returns the set of selected proxy IDs for the user."""
     return user_selections.get(user_id, set())
 
-def process_payment_for_proxies(user_id, proxy_ids):
-    # Process the payment for the selected proxies
-    for proxy_id in proxy_ids:
-        proxy = DBProxy.get(DBProxy.id == proxy_id)
-        # Example: Update proxy status, payment records, etc.
-        proxy.active = True
-        proxy.save()
+def process_payment_for_proxies(database, user_id, proxy_ids):  # database injected
+    """Processes payment and updates proxy statuses."""
+    with database.get_session() as session:
+        for proxy_id in proxy_ids:
+            proxy = session.query(DBProxy).filter_by(id=proxy_id).first()
+            if proxy:
+                proxy.active = True
+                session.commit()
 
-def get_user_proxies(username, chat_id, user_id):
-    # Sync user data (id and chat_id) using the provided username
-    user, created = User.get_or_create(
-        username=username,
-        defaults={
-            'chat_id': chat_id,
-            'id': user_id,
-            'joined_at': datetime.now(),
-            'last_message_at': datetime.now(),
-            'is_active': True
-        }
-    )
+def get_user_proxies(database, username, chat_id, user_id):
+    """Retrieves user proxies using the repository."""
+    with database.get_session() as session:
+        user_repository = UserRepository(session)
+        user, created = user_repository.get_or_create_user_by_telegram_data(
+            session=session,
+            telegram_user_id=user_id,
+            username=username,
+            chat_id=chat_id,
+            joined_at=datetime.now(),
+        )
+        if user is None:
+            # Handle the case where user creation/retrieval fails 
+            return [] 
 
-    if not created:
-        # Update the user's chat_id and last_message_at if the user already exists
-        user.chat_id = chat_id
-        user.last_message_at = datetime.now()
-        user.save()
+        #proxy_repo = ProxyRepository(session)
+        #return proxy_repo.get_user_proxies(user.id)
+        connection_repo = ConnectionRepository(session)
+        return connection_repo.get_user_connections(user.id)
+    
+    
+def get_user_connections(database, username, chat_id, user_id):
+    """Retrieves user connections using the repository."""
+    with database.get_session() as session:
+        user_repository = UserRepository(session)
+        user, created = user_repository.get_or_create_user_by_telegram_data(
+            session=session,
+            telegram_user_id=user_id,
+            username=username,
+            chat_id=chat_id,
+            joined_at=datetime.now(),
+        )
+        if user is None:
+            # Handle the case where user creation/retrieval fails
+            return []
 
-    # Retrieve the list of proxies that belong to the user and are due for payment or have expired
-    proxies = list(DBProxy.select().where(
-        (DBProxy.user == user)
-    ))
-
-    return proxies
+        connection_repo = ConnectionRepository(session)  # Use ConnectionRepository
+        return connection_repo.get_user_connections(user.id)
+    

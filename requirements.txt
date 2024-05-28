@@ -3,3 +3,6 @@ aiogram==2.25.1
 requests
 pytz
 python-dotenv
+peewee
+boto3
+botocore

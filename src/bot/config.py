@@ -1,5 +1,7 @@
 from dotenv import load_dotenv
 import os
+from sqlalchemy import create_engine
+from sqlalchemy.engine.url import URL
 
 load_dotenv()
 
@@ -29,6 +31,9 @@ IPROXY_TOKEN = os.environ.get("IPROXY_TOKEN")
 AUTH_HEADER = {"Authorization": IPROXY_TOKEN}
 BASE_API_URL = 'https://api.iproxy.online/v1/'
 
+TARIFF_PRICES = os.environ.get("TARIFF_PRICES")
+USER_TIMEZONE = os.getenv('USER_TIMEZONE', 'Europe/Warsaw')
+
 ### Localtonet ###
 LOCALTONET_API_KEY = os.environ.get("LOCALTONET_API_KEY")
 
@@ -41,5 +46,20 @@ PM_PEKAOBANK = os.environ.get("PM_PEKAOBANK")
 ### Database ###
 SECRET_NAME = os.environ.get("SECRET_NAME")
 REGION_NAME = os.environ.get("REGION_NAME")
+DATABASE_TYPE = os.environ.get("DATABASE_TYPE")
 DATABASE_NAME = os.environ.get("DATABASE_NAME")
+DATABASE_USERNAME = os.environ.get("DATABASE_USERNAME")
+DATABASE_PASSWORD = os.environ.get("DATABASE_PASSWORD")
 DATABASE_HOST = os.environ.get("DATABASE_HOST")
+
+#AZURE_SQL_CONNECTIONSTRING = f'Driver={{ODBC Driver 18 for SQL Server}};Server=tcp:{DATABASE_HOST},1433;Database={DATABASE_NAME};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;UID={DATABASE_USERNAME};PWD={DATABASE_PASSWORD}'
+
+AZURE_SQL_CONNECTIONSTRING = URL.create(
+    "mssql+pymssql",
+    username=os.environ.get("DATABASE_USERNAME"),
+    password=os.environ.get("DATABASE_PASSWORD"),
+    host=os.environ.get("DATABASE_HOST"),
+    port=1433,
+    database=os.environ.get("DATABASE_NAME"),
+    #query={"driver": "ODBC Driver 18 for SQL Server"}, # Or the driver you are using
+)

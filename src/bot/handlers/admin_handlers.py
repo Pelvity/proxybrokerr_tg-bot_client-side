@@ -5,6 +5,7 @@ from src.db.models.db_models import User
 from src.bot.config import ADMIN_CHAT_ID
 from src.utils.keyboards import admin_main_menu
 from aiogram.dispatcher.filters.state import State, StatesGroup
+from src.utils.payment_utils import get_payment_id_from_callback
 
 class AdminStates(StatesGroup):
     waiting_for_message = State()
@@ -39,18 +40,6 @@ async def admin_client_selected(query: types.CallbackQuery, state: FSMContext):
 async def admin_send_message_to_client(message: types.Message, state: FSMContext):
     data = await state.get_data()
     client = data.get('selected_client')
-    await bot.send_message(chat_id=client.chat_id, text=message.text)
+    await bot.send_message(chat_id=client.telegram_chat_id, text=message.text)
     await message.reply(f"Message sent to {client.first_name} {client.last_name} (@{client.username}).")
     await state.finish()
-
-
-""" PAYMENT """
-
-from src.services.payment_service import confirm_payment
-
-@dp.callback_query_handler(lambda c: c.data.startswith('confirm_payment'))
-async def process_confirm_payment_callback(callback_query: types.CallbackQuery):
-    payment_id = get_payment_id_from_callback(callback_query)
-    
-    await confirm_payment(payment_id)
-    await bot.answer_callback_query(callback_query.id)

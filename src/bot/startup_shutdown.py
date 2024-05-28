@@ -1,5 +1,6 @@
 import logging
-from .bot_setup import bot, dp, ADMIN_CHAT_ID, WEBHOOK_URL, PORT
+from src.bot.config import ADMIN_CHAT_ID, WEBHOOK_URL
+from src.bot.bot_setup import bot, dp
 from aiogram import Dispatcher
 from src.utils.background_tasks import sync_proxy_connections
 import asyncio

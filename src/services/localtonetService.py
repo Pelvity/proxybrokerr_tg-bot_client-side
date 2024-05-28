@@ -5,11 +5,13 @@ from dotenv import load_dotenv
 from datetime import datetime
 from typing import List
 import json
+from peewee import IntegrityError
+from time import time
 
 from .proxyServiceInterface import ProxyServiceInterface
 from ..bot.models.proxy_models import Proxy, ProxyConnection
-from src.db.models.db_models import DBProxyHistory, DBProxy, DBProxyConnection, User
-from peewee import IntegrityError
+from src.db.models.db_models import DBProxy, DBProxyConnection, User, UserType
+from src.db.db_utils import *
 
 dotenv_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config.env')
 load_dotenv(dotenv_path)
@@ -23,7 +25,7 @@ class LocaltonetManager(ProxyServiceInterface):
         self.base_url = "https://localtonet.com/api"
         self.service_name = "ltn"
 
-    async def getConnections(self) -> List[Proxy]:
+    async def getAllProxies(self) -> List[DBProxy]:
         headers = {'Authorization': f'Bearer {self.api_key}'}
         response = requests.get(f"{self.base_url}/GetTunnels", headers=headers)
         if response.status_code == 200:
@@ -43,10 +45,11 @@ class LocaltonetManager(ProxyServiceInterface):
                     name = tunnel.get('authenticationUsername') or 'N/A'
                     external_user_id = tunnel.get('externalUserId', 'N/A') or 'N/A'
                     user = external_user_id.split('---')[1] if '---' in external_user_id else 'N/A'
-                    connection = Proxy(
+                    connection = DBProxy(
                         #id=tunnel['id'],
                         id=tunnel.get('id', ''),
                         name=name,
+                        description=name,
                         authToken=tunnel.get('authToken', ''),
                         proxies=[],  # Fetch and add actual proxies if needed
                         user=user,
@@ -129,7 +132,7 @@ class LocaltonetManager(ProxyServiceInterface):
         else:
             return f"Failed to fetch tunnel expiration date: {response.status_code}"
         
-    async def getProxiesforConnection(self, authToken):
+    async def getConnectionsOfProxy(self, authToken):
         """
         Fetches proxy details for a given authToken and returns a list of Proxy instances.
         """
@@ -147,14 +150,14 @@ class LocaltonetManager(ProxyServiceInterface):
                 raw_proxies = data.get("result", [])
                 for proxy in raw_proxies:
                     # Create a Proxy instance for each item in raw_proxies
-                    proxy_instance = ProxyConnection(
+                    proxy_instance = DBProxyConnection(
                         id=proxy['id'],
                         userId=proxy.get('userId', ''),
-                        createdTimestamp=proxy.get('createdTimestamp', 0),
-                        updatedTimestamp=proxy.get('updatedTimestamp', 0),
+                        created_timestamp=proxy.get('createdTimestamp', 0),
+                        updated_timestamp=proxy.get('updatedTimestamp', 0),
                         name=proxy.get('name', ''),
                         description=proxy.get('description', ''),
-                        ip=proxy.get('serverIp', ''),
+                        host=proxy.get('serverIp', ''),
                         port=proxy.get('serverPort', 0),
                         login=proxy.get('authenticationUsername', ''),  # Assuming this is the login
                         password=proxy.get('authenticationPassword', ''),  # Assuming this is the password
@@ -215,68 +218,103 @@ class LocaltonetManager(ProxyServiceInterface):
         else:
             return f"Failed to set expiration date: HTTP {response.status_code}"
     
-    async def sync_connections(self):
-        connections = await self.getConnections()
-        for connection in connections:
+"""     async def sync_connections(self):
+        proxies = await self.getAllProxies()
+        for proxy in proxies:
+            connections = await self.getConnectionsOfProxy(proxy.authToken)
             user, user_created = User.get_or_create(
-                username = connection.user.lstrip('@') if connection.user else None,
-                defaults = {
-                    'first_name': getattr(connection, 'first_name', None),  # Use None if 'first_name' is not available
-                    'last_name': getattr(connection, 'last_name', None),
-                    'joined_at': datetime.now(),  # Use the current time as the join date if not provided
-                    'is_active': True  # Default to True if not specified
+                username=proxy.user.lstrip('@') if proxy.user else None,
+                defaults={
+                    'user_type': UserType.TELEGRAM.value,  # Assuming Telegram users by default
+                    'first_name': getattr(proxy, 'first_name', None),
+                    'last_name': getattr(proxy, 'last_name', None),
+                    'joined_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    'is_active': True
                 }
             )
 
             try:
-                proxy, created = DBProxy.get_or_create(
-                    auth_token=connection.id,  # Assuming auth_token is unique
-                    defaults={
-                        'name': connection.name,
-                        'user': user.id,  # Link to the user record
-                        'expiration_date': connection.expiration_date,
-                        'tariff_plan': connection.tariff_plan,
-                        'tariff_expiration_date': connection.tariff_expiration_date,
-                        'days_left': connection.days_left,
-                        'hours_left': connection.hours_left,
-                        'device_model': connection.deviceModel,
-                        'active': connection.active,
-                        'service_name': 'ltn'
-                    }
-                )
-                if not created:
-                    update_proxy_data(proxy, connection, user)
-            except IntegrityError as e:
-                print(f"Failed to create or update DBProxy due to IntegrityError: {e}")
+                db_proxy_defaults = {
+                    'name': proxy.name,
+                    'user': user,
+                    'tariff_plan': proxy.tariff_plan,
+                    'tariff_expiration_date': proxy.tariff_expiration_date.strftime("%Y-%m-%d %H:%M:%S"),
+                    'days_left': proxy.days_left,
+                    'hours_left': proxy.hours_left,
+                    'device_model': proxy.deviceModel,
+                    'active': proxy.active,
+                    'service_name': 'ipr'  # or 'ipr' for iproxyService
+                }
 
-def update_proxy_data(proxy, connection, user):
-    # Save the old data in history before updating
-    DBProxyHistory.create(
-        proxy=proxy,
-        user=user,  # Link to the user
-        service_name=proxy.service_name,
-        connection_id=proxy.id,
-        name=proxy.name,
-        expiration_date=proxy.expiration_date,
-        tariff_plan=proxy.tariff_plan,
-        tariff_expiration_date=proxy.tariff_expiration_date,
-        created_at=proxy.created_at,
-        updated_at=datetime.now()
-    )
-    # Update the proxy with new data
-    proxy.name = connection.name
-    proxy.expiration_date = connection.expiration_date
-    proxy.tariff_plan = connection.tariff_plan
-    proxy.tariff_expiration_date = connection.tariff_expiration_date
-    proxy.updated_at = datetime.now()
-    proxy.save()
+                if proxy.expiration_date is not None:
+                    db_proxy_defaults['expiration_date'] = proxy.expiration_date.strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    db_proxy_defaults['expiration_date'] = None
+
+                db_proxy, created = Proxy.get_or_create(
+                    auth_token=proxy.id,
+                    defaults=db_proxy_defaults
+                )
+
+                if not created:
+                    update_proxy_data(db_proxy, proxy, user)
+
+                # Get the existing connections for the proxy from the database
+                existing_connections = {connection.id: connection for connection in db_proxy.connections}
+
+                # Create a set to store the IDs of connections retrieved from the API
+                api_connection_ids = set()
+
+                for connection in connections:
+                    created_datetime = datetime.fromtimestamp(connection.created_timestamp/1000).strftime("%Y-%m-%d %H:%M:%S")
+                    updated_datetime = datetime.fromtimestamp(connection.updated_timestamp/1000).strftime("%Y-%m-%d %H:%M:%S")
+
+                    # Create or update the DBProxyConnection record
+                    db_connection, connection_created = ProxyConnection.get_or_create(
+                        id=connection.id,
+                        defaults={
+                            'user': user,
+                            'proxy': db_proxy,
+                            'created_timestamp': created_datetime,
+                            'updated_timestamp': updated_datetime,
+                            'name': connection.name,
+                            'description': connection.description,
+                            'host': getattr(connection, 'host', ''),
+                            'port': getattr(connection, 'port', 0),
+                            'login': getattr(connection, 'login', ''),
+                            'password': getattr(connection, 'password', ''),
+                            'connection_type': getattr(connection, 'type', ''),
+                            'active': connection.active,
+                            'deleted': False  # Set deleted to False for connections retrieved from the API
+                        }
+                    )
+                    if not connection_created:
+                        update_connection_data(db_connection, connection)
+                        db_connection.deleted = False  # Set deleted to False for existing connections retrieved from the API
+                        db_connection.save()
+
+                    # Add the connection ID to the set of IDs retrieved from the API
+                    api_connection_ids.add(connection.id)
+
+                # Mark the connections that exist in the database but not in the API response as deleted
+                for connection_id, db_connection in existing_connections.items():
+                    if int(connection_id) not in api_connection_ids:
+                        db_connection.deleted = True
+                        db_connection.save()
+
+            except IntegrityError as e:
+                print(f"Failed to create or update DBProxy or DBProxyConnection due to IntegrityError: {e}")
+
+ """
+
+
 
 # Example usage:
 def main():
     proxy_manager = LocaltonetManager(LOCALTONET_API_KEY)
     tunnels = proxy_manager.GetTunnels()
     expirationdate = proxy_manager.GetExpirationDateByTunnelId('298487')
-    proxies = proxy_manager.getProxiesforConnection('t9FwScgExiAnZkPVraCHjGpvsXJu7Lyf1')
+    proxies = proxy_manager.getConnectionsOfProxy('t9FwScgExiAnZkPVraCHjGpvsXJu7Lyf1')
     print(tunnels)
     print(expirationdate)
 

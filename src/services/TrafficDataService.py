@@ -57,7 +57,7 @@ class TrafficDataService:
         last_day_of_month = datetime(year, month + 1, 1) - timedelta(days=1)
         first_day_of_month = datetime(year, month, 1)
 
-        user_connections = await self.proxy_service.getConnections()
+        user_connections = await self.proxy_service.getAllProxies()
         logging.info(f"Retrieved {len(user_connections)} user connections")
 
         result_data = []

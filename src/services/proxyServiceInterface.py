@@ -1,12 +1,12 @@
 from typing import Tuple
 class ProxyServiceInterface:
-    def getConnections(self):
+    def getAllProxies(self):
         raise NotImplementedError
 
     def getProxyExpirationDate(self, connection_id):
         raise NotImplementedError
     
-    def getProxiesforConnection(self, connection_id):
+    def getConnectionsOfProxy(self, connection_id):
         raise NotImplementedError
     
     def updateProxyUser(self, connection_id, user):

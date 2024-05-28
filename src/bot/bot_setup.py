@@ -2,19 +2,19 @@ from aiogram import Bot, Dispatcher
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher.middlewares import LifetimeControllerMiddleware
 
-from .config import *
+from src.db.azure_db import AzureSQLService 
+from .config import TG_BOT_TOKEN
 
-
-# Create a bot instance and connect to the API
+# Create bot, dispatcher, and middleware
 bot = Bot(TG_BOT_TOKEN)
-
-# Create a Dispatcher instance and attach the bot to it
 dp = Dispatcher(bot, storage=MemoryStorage())
-
-# Create a middleware to handle the LifetimeController
 lifetime_controller_middleware = LifetimeControllerMiddleware()
-
-# Register the middleware with the dispatcher
 dp.middleware.setup(lifetime_controller_middleware)
 
-client_message_mapping = {}
+# Initialize the database
+database = AzureSQLService() 
+database.create_tables() 
+
+# ... rest of your bot setup (import handlers, etc.) ... 
+
+client_message_mapping = {} 

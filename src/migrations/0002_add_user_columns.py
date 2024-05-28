@@ -2,7 +2,7 @@
 
 from peewee import *
 from playhouse.migrate import *
-from src.db.database import db
+from src.db.database import Database
 
 def migrate(migrator, database, fake=False, **kwargs):
     migrate(
