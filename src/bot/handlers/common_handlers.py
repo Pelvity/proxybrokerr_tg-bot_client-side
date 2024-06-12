@@ -10,6 +10,10 @@ from src.services.localtonetService import LocaltonetManager
 from src.bot.config import IPROXY_API_KEY, LOCALTONET_API_KEY
 from src.db.models.db_models import DBProxy, User
 from sqlalchemy.orm.exc import NoResultFound
+from src.db.repositories.proxy_repositories import ProxyRepository
+from src.db.repositories.user_repositories import UserRepository
+from src.db.repositories.connection_repositories import ConnectionRepository 
+
 
 iproxy_manager = IProxyManager(IPROXY_API_KEY)
 localtonet_manager = LocaltonetManager(LOCALTONET_API_KEY)
@@ -67,10 +71,19 @@ async def my_proxy_command(message: types.Message):
     first_name = message.from_user.first_name
     last_name = message.from_user.last_name
 
-    user_proxies = get_user_proxies(database, user_username, message.chat.id, user_id)
-    
-    if not user_proxies:
-        await bot.send_message(chat_id=message.chat.id, 
-                               text="You have no proxies\nBuy it directly:\nhttps://t.me/proxybrokerr")
+    with database.get_session() as session:
+        user_repository = UserRepository(session)
+        user = user_repository.get_or_create_user(message) # Get or create the user
+        
+        #proxy_repository = ProxyRepository(session)
+        #user_proxies = proxy_repository.get_user_proxies(user.id)
+        connection_repository = ConnectionRepository(session)
+        user_connections = connection_repository.get_user_connections(user.id)
+
+    if not user_connections:
+        await bot.send_message(
+            chat_id=message.chat.id, 
+            text="You have no proxies\nBuy it directly:\nhttps://t.me/proxybrokerr"
+        )
     else:
-        await send_proxies(message.chat.id, user_proxies)
+        await send_proxies(message.chat.id, user_connections)
