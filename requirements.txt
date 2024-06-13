@@ -7,3 +7,4 @@ peewee
 boto3
 botocore
 sqlalchemy
+pymssql
