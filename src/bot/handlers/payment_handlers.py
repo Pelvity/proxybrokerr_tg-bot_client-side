@@ -7,8 +7,8 @@ from src.bot.bot_setup import dp, database
 from src.db.repositories.payment_repositories import PaymentRepository
 from src.db.repositories.user_repositories import UserRepository
 from src.utils.keyboards import generate_connection_selection_keyboard, generate_days_keyboard
-from src.db.models.db_models import Payment, DBProxy
-from src.utils.payment_utils import calculate_total_payment_amount, send_payment_confirmation_message_to_admin, calculate_payment_amount, send_payment_notification_to_admin
+from src.db.models.db_models import CryptoPayment, Payment, DBProxy
+from src.utils.payment_utils import calculate_total_payment_amount, send_payment_confirmation_message_to_admin, calculate_payment_amount, send_payment_notification_to_admin, send_payment_status_message_to_user
 from src.utils.proxy_utils import get_user_connections
 from src.db.repositories.connection_repositories import ConnectionRepository
 from src.db.repositories.user_repositories import UserRepository
@@ -59,7 +59,7 @@ async def handle_pay_selected_connections_callback(callback_query: types.Callbac
         payment_methods_keyboard = types.InlineKeyboardMarkup()
         payment_methods_keyboard.add(
             types.InlineKeyboardButton(text="Crypto", callback_data="payment_method:crypto"),
-            types.InlineKeyboardButton(text="Bank Transfer", callback_data="payment_method:bank_transfer")
+            #types.InlineKeyboardButton(text="Bank Transfer", callback_data="payment_method:bank_transfer")
         )
         await callback_query.message.answer("Select the payment method:", reply_markup=payment_methods_keyboard)
     else:
@@ -74,20 +74,80 @@ async def handle_payment_method_selection(callback_query: types.CallbackQuery, s
         selected_connection_ids = data.get('selected_connection_ids', [])
         days = 30  # Default to 30 days
 
-    keyboard = generate_days_keyboard(days)
-    await state.update_data(days=days)
+    with database.get_session() as session:
+        connection_repository = ConnectionRepository(session)
+        selected_connections = [
+            connection_repository.get_connection_by_id(connection_id)
+            for connection_id in selected_connection_ids
+        ]
+
+        total_amount, payment_items = calculate_total_payment_amount(selected_connections, days)
+        current_end_dates = [connection.expiration_date for connection in selected_connections]
+        connection_logins = [connection.login for connection in selected_connections]  # Extract logins
+        new_end_dates = [connection.expiration_date + timedelta(days=days) for connection in selected_connections]
+
+    await state.update_data(days=days, total_amount=total_amount, current_end_dates=current_end_dates, new_end_dates=new_end_dates)
+
+    keyboard = generate_days_keyboard(days, total_amount, current_end_dates, new_end_dates, connection_logins)
 
     await callback_query.message.answer(
         "Select the rent period:",
         reply_markup=keyboard
     )
 
+
 @dp.callback_query_handler(lambda c: c.data.startswith('select_period:'))
 async def handle_period_selection_callback(callback_query: types.CallbackQuery, state: FSMContext):
     days = int(callback_query.data.split(':')[1])
     await state.update_data(days=days)
 
-    keyboard = generate_days_keyboard(days)
+    async with state.proxy() as data:
+        selected_connection_ids = data.get('selected_connection_ids', [])
+
+    with database.get_session() as session:
+        connection_repository = ConnectionRepository(session)
+        selected_connections = [
+            connection_repository.get_connection_by_id(connection_id)
+            for connection_id in selected_connection_ids
+        ]
+
+        total_amount, payment_items = calculate_total_payment_amount(selected_connections, days)
+        current_end_dates = [connection.expiration_date for connection in selected_connections]
+        new_end_dates = [connection.expiration_date + timedelta(days=days) for connection in selected_connections]
+
+    await state.update_data(total_amount=total_amount, current_end_dates=current_end_dates, new_end_dates=new_end_dates)
+
+    keyboard = generate_days_keyboard(days, total_amount, current_end_dates, new_end_dates)
+    await callback_query.message.edit_reply_markup(reply_markup=keyboard)
+    await callback_query.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith('change_days:'))
+async def handle_change_days_callback(callback_query: types.CallbackQuery, state: FSMContext):
+    change = int(callback_query.data.split(':')[1])
+
+    async with state.proxy() as data:
+        days = data.get('days', 30) + change
+        if days < 0:
+            days = 0
+        data['days'] = days
+        selected_connection_ids = data.get('selected_connection_ids', [])
+
+    with database.get_session() as session:
+        connection_repository = ConnectionRepository(session)
+        selected_connections = [
+            connection_repository.get_connection_by_id(connection_id)
+            for connection_id in selected_connection_ids
+        ]
+
+        total_amount, payment_items = calculate_total_payment_amount(selected_connections, days)
+        current_end_dates = [connection.expiration_date for connection in selected_connections]
+        connection_logins = [connection.login for connection in selected_connections]  # Extract logins
+        new_end_dates = [connection.expiration_date + timedelta(days=days) for connection in selected_connections]
+
+    await state.update_data(total_amount=total_amount, current_end_dates=current_end_dates, new_end_dates=new_end_dates)
+
+    keyboard = generate_days_keyboard(days, total_amount, current_end_dates, new_end_dates, connection_logins)
     await callback_query.message.edit_reply_markup(reply_markup=keyboard)
     await callback_query.answer()
 
@@ -159,7 +219,28 @@ async def handle_txid_input(message: types.Message, state: FSMContext):
             for connection in selected_connections
         ]
 
-        payments = payment_repository.create_payments(user, payment_items, txid, days, payment_method)
+        # Create payments with txid for crypto payments
+        payments = []
+        for connection, amount in payment_items:
+            payment = Payment(
+                user_id=user.id,
+                connection_id=connection.id,
+                amount=amount,
+                start_date=datetime.now(),
+                end_date=datetime.now() + timedelta(days=days),
+                payment_method=payment_method,
+                status='pending'
+            )
+            session.add(payment)
+            session.commit()  # Commit to get the payment.id
+
+            if payment_method == 'crypto':
+                crypto_payment = CryptoPayment(payment_id=payment.id, txid=txid)
+                session.add(crypto_payment)
+
+            payments.append(payment)
+        
+        session.commit()  # Commit all changes to the database
 
         if payments:
             await send_payment_confirmation_message_to_admin(payments, txid, days)
@@ -175,10 +256,12 @@ async def handle_confirm_payment_callback(callback_query: types.CallbackQuery):
 
     with database.get_session() as session:
         payment_repository = PaymentRepository(session)
+        crypto_payment_repository = session.query(CryptoPayment).filter_by(payment_id=int(payment_id)).first()
         payment = payment_repository.get_payment_by_id(int(payment_id))
 
         if payment:
-            payment_repository.confirm_payment(payment)
+            txid = crypto_payment_repository.txid if crypto_payment_repository else None
+            payment_repository.confirm_payment(payment, txid)
 
             # Update the original message with icons and make the reply
             message_text = callback_query.message.text
@@ -196,6 +279,7 @@ async def handle_confirm_payment_callback(callback_query: types.CallbackQuery):
             await callback_query.message.edit_text(updated_message_text, reply_markup=keyboard)
 
             await callback_query.message.reply(f"Payment {payment_id} confirmed.")
+            await send_payment_status_message_to_user(payment.user_payments, payment)
         else:
             await callback_query.message.reply("Payment not found.")
 
@@ -227,50 +311,6 @@ async def handle_decline_payment_callback(callback_query: types.CallbackQuery):
 
             # Reply to the message
             await callback_query.message.reply(f"Payment {payment_id} declined.")
+            await send_payment_status_message_to_user(payment.user_payments, payment)
         else:
             await callback_query.message.reply("Payment not found.")
-
-    
-# @dp.callback_query_handler(lambda c: c.data.startswith('select_proxy:'))
-# async def handle_select_proxy_callback(callback_query: types.CallbackQuery, state: FSMContext):
-#     _, proxy_id = callback_query.data.split(':')
-#     proxy_id = int(proxy_id)
-
-#     async with state.proxy() as data:
-#         selected_proxy_ids = data.get('selected_proxy_ids', [])
-#         if proxy_id in selected_proxy_ids:
-#             selected_proxy_ids.remove(proxy_id)
-#         else:
-#             selected_proxy_ids.append(proxy_id)
-#         data['selected_proxy_ids'] = selected_proxy_ids
-
-#     # Use ConnectionRepository to get connections
-#     with database.get_session() as session:
-#         connection_repository = ConnectionRepository(session)
-#         user_connections = connection_repository.get_user_connections(callback_query.from_user.id)
-
-#     updated_keyboard = generate_proxy_selection_keyboard(user_connections, selected_proxy_ids)
-#     await callback_query.message.edit_reply_markup(reply_markup=updated_keyboard)
-#     await callback_query.answer()
-
-
-# @dp.callback_query_handler(lambda c: c.data == 'pay_selected_proxies')
-# async def handle_pay_selected_proxies_callback(callback_query: types.CallbackQuery, state: FSMContext):
-#     async with state.proxy() as data:
-#         selected_proxy_ids = data.get('selected_proxy_ids', [])
-
-#     if selected_proxy_ids:
-#         keyboard = generate_days_keyboard(30)
-#         await callback_query.message.answer("Select the period of rent extension:", reply_markup=keyboard)
-#     else:
-#         await callback_query.answer("Please select at least one proxy.")
-#         async with state.proxy() as data:
-#             data['selected_proxy_ids'] = []
-
-#         # Use ConnectionRepository to get connections
-#         with database.get_session() as session:
-#             connection_repository = ConnectionRepository(session)
-#             user_connections = connection_repository.get_user_connections(callback_query.from_user.id)
-
-#         updated_keyboard = generate_proxy_selection_keyboard(user_connections, [])
-#         await callback_query.message.edit_reply_markup(reply_markup=updated_keyboard)

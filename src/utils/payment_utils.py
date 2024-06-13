@@ -23,7 +23,7 @@ async def send_payment_confirmation_message_to_admin(payment_list: List[Payment]
         message_text += f"Current Expiration Date: {connection.expiration_date.strftime('%d/%m/%Y') if connection.expiration_date else 'N/A'}\n"
         message_text += f"New Expiration Date: {new_expiration_date.strftime('%d/%m/%Y')}\n\n"
 
-    message_text += f"Transaction ID (TXID): {txid}\n\n"
+    message_text += f"Transaction ID (TXID): https://tronscan.org/#/transaction/{txid}\n\n"
     message_text += "Confirm or Decline each payment?"
 
     admin_chat_id = ADMIN_CHAT_ID
@@ -89,32 +89,38 @@ def calculate_payment_amount(days):
     price_per_week = 15
     price_per_month = 50
 
-    # Calculate the payment amount based on the number of days
-    if days >= 30:
-        return price_per_month * (days // 30)
-    elif days >= 7:
-        return price_per_week * (days // 7)
-    else:
-        return price_per_day * days
+    # Calculate the price per day and per week
+    daily_rate_month = price_per_month / 30
+    daily_rate_week = price_per_week / 7
 
-def calculate_total_payment_amount(
-    connections: List[DBProxyConnection], days: int
-) -> Tuple[float, List[Tuple[DBProxyConnection, float]]]:  # Use typing.Tuple
-    """
-    Calculates the total payment amount for selected connections and days.
-    """
+    # Calculate the number of months, weeks, and remaining days
+    months = days // 30
+    days_remaining_after_months = days % 30
+
+    weeks = days_remaining_after_months // 7
+    days_remaining_after_weeks = days_remaining_after_months % 7
+
+    # Calculate the total cost
+    total_cost = (months * price_per_month) + (weeks * price_per_week) + (days_remaining_after_weeks * daily_rate_month)
+
+    return round(total_cost,2)
+
+def calculate_total_payment_amount(connections: List[DBProxyConnection], days: int) -> Tuple[float, List[Tuple[DBProxyConnection, float]]]:
     total_amount = 0
-    payment_items: List[Tuple[DBProxyConnection, float]] = []  
+    payment_items = []
 
     for connection in connections:
         try:
-            amount = calculate_payment_amount(days) 
+            amount = calculate_payment_amount(days)
             total_amount += amount
-            payment_items.append((connection, amount)) 
+            payment_items.append((connection, amount))
         except ValueError as e:
             print(f"Error calculating payment for connection {connection.id}: {e}")
 
-    return total_amount, payment_items 
+    return total_amount, payment_items
+
+# The handler functions remain mostly unchanged, ensure to use the updated calculate_payment_amount function where necessary.
+
 
 def get_payment_id_from_callback(callback_query: types.CallbackQuery):
     _, payment_id = callback_query.data.split(":")

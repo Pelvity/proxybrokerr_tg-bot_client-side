@@ -30,7 +30,7 @@ async def send_proxies(chat_id: int, connections: List[DBProxyConnection]):
         proxy = connection.proxy 
         days_left = (connection.expiration_date - datetime.now()).days  # Calculate days left
         button_text = (
-            f"{proxy.name} | "
+            f"{connection.login} | "
             f"{connection.expiration_date.strftime('%d/%m/%Y')} | "
             f"{days_left} days left" 
         )

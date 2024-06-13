@@ -142,7 +142,7 @@ class Payment(Base):
     payment_method_id = Column(Integer, nullable=True)  
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
-    created_at = Column(DateTime, default=datetime.now)
+    #created_at = Column(DateTime, default=datetime.now)
 
     connection = relationship("DBProxyConnection", back_populates="payments")
     

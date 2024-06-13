@@ -26,6 +26,7 @@ async def admin_start_command(message: types.Message):
 @dp.message_handler(lambda message: message.text == "ℹ️ Info")
 async def info_command(message: types.Message):
     await bot.send_message(chat_id=message.chat.id, text="Select an option:", reply_markup=info_keyboard())
+    
 
 @dp.message_handler(lambda message: message.text == "📜 Agreement")
 async def agreement_command(message: types.Message):
@@ -35,7 +36,7 @@ async def agreement_command(message: types.Message):
 async def agreement_command(message: types.Message):
     await bot.send_message(chat_id=message.chat.id, text="Just type your question in this chat\nПросто напишите свой вопрос в этот чат\nПросто напишіть своє питання у цей чат", reply_markup=client_main_menu())
 
-@dp.message_handler(lambda message: message.text == "🌐 My Proxy")
+@dp.message_handler(lambda message: message.text == "🌐 My Connections")
 async def my_proxy_command(message: types.Message):
     # user_id = message.from_user.id
     # user_username = message.from_user.username
@@ -111,3 +112,9 @@ async def handle_pay_command(message: types.Message, state: FSMContext):
             await message.answer("Select the connections you want to pay for:", reply_markup=keyboard)
         else:
             await message.answer("You currently have no connections to pay for.")
+            
+            
+
+@dp.message_handler(lambda message: message.text == "👤 Profile")
+async def info_command(message: types.Message):
+    await bot.send_message(chat_id=message.chat.id, text="Your Profile", reply_markup=client_main_menu())
