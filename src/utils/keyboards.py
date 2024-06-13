@@ -1,6 +1,9 @@
 import types
+from typing import List
 
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+
+from src.db.models.db_models import DBProxyConnection
 
 def client_main_menu():
     keyboard = ReplyKeyboardMarkup(
@@ -77,7 +80,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def generate_days_keyboard(days: int) -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup()
-    
+
     days_button = InlineKeyboardButton(text=str(days), callback_data=f'select_period:{days}')
     keyboard.add(days_button)
 
@@ -92,7 +95,7 @@ def generate_days_keyboard(days: int) -> InlineKeyboardMarkup:
     ]
 
     for text, value in button_texts:
-        button = InlineKeyboardButton(text=text, callback_data=f"select_period:{days + value}")
+        button = InlineKeyboardButton(text=text, callback_data=f'select_period:{days + value}')
         keyboard.add(button)
 
     confirm_button = InlineKeyboardButton(text="Confirm", callback_data=f"confirm_period:{days}")
@@ -100,11 +103,45 @@ def generate_days_keyboard(days: int) -> InlineKeyboardMarkup:
 
     return keyboard
 
-
 def generate_proxy_keyboard(proxies, selected_proxy_ids):
     keyboard = InlineKeyboardMarkup()
     for proxy in proxies:
         button_text = f"{proxy.name} {'✅' if proxy.id in selected_proxy_ids else ''}"
         keyboard.add(InlineKeyboardButton(text=button_text, callback_data=f"select_proxy:{proxy.id}"))
     keyboard.add(InlineKeyboardButton(text="Pay", callback_data="pay_selected_proxies"))
+    return keyboard
+
+
+def generate_proxy_selection_keyboard(connections: List[DBProxyConnection], selected_ids: list = None) -> InlineKeyboardMarkup:
+    """Generates an inline keyboard for selecting proxies."""
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    selected_ids = selected_ids or []
+
+    for connection in connections:
+        proxy = connection.proxy
+        button_text = f"{'✅' if connection.id in selected_ids else '❌'} {proxy.name}"
+        callback_data = f"select_proxy:{connection.id}"  # Use connection.id
+        keyboard.add(InlineKeyboardButton(text=button_text, callback_data=callback_data))
+
+    keyboard.add(InlineKeyboardButton(text="Pay", callback_data="pay_selected_proxies"))
+    return keyboard
+
+from typing import List, Optional
+
+CHECK_MARK = '✅'
+CROSS_MARK = '❌'
+
+def generate_connection_selection_keyboard(connections: List[DBProxyConnection], selected_ids: Optional[List[str]] = None, user_id: int = None) -> InlineKeyboardMarkup:
+    """Generates an inline keyboard for selecting connections."""
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    selected_ids = selected_ids or []
+
+    for connection in connections:
+        proxy = connection.proxy
+        is_selected = CHECK_MARK if connection.id in selected_ids else CROSS_MARK
+        callback_data = f"select_connection:{connection.id}:{user_id}"  # Include user_id in the callback data
+        button_text = f"{is_selected} {proxy.name} ({connection.connection_type})"
+        keyboard.add(InlineKeyboardButton(text=button_text, callback_data=callback_data))
+
+    keyboard.add(InlineKeyboardButton(text="Pay", callback_data="pay_selected_connections"))
     return keyboard

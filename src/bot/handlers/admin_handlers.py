@@ -50,9 +50,21 @@ async def admin_client_selected(query: types.CallbackQuery, state: FSMContext):
     if client:
         await state.update_data(selected_client=client)
         await AdminStates.waiting_for_message.set()
-        await query.message.reply("Please enter the message you want to send to the client:")
+
+        # Create a keyboard with a cancel button
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(types.InlineKeyboardButton(text="Cancel", callback_data="cancel"))
+
+        await query.message.reply("Please enter the message you want to send to the client:", reply_markup=keyboard)
     else:
         await query.message.reply("Client not found.")
+        
+@dp.callback_query_handler(lambda query: query.data == "cancel")
+async def handle_cancel(query: types.CallbackQuery, state: FSMContext):
+    if query.from_user.id == ADMIN_CHAT_ID:
+        await state.finish()
+        await query.message.reply("Action canceled.", reply_markup=admin_main_menu())
+    await bot.answer_callback_query(query.id)  # Acknowledge the callback query
 
 @dp.message_handler(lambda message: message.from_user.id == ADMIN_CHAT_ID, state=AdminStates.waiting_for_message)
 async def admin_send_message_to_client(message: types.Message, state: FSMContext):
@@ -63,11 +75,13 @@ async def admin_send_message_to_client(message: types.Message, state: FSMContext
         await bot.send_message(chat_id=client.telegram_chat_id, text=message.text)
         await message.reply(
             f"Message sent to {client.first_name} {client.last_name} "
-            f"(@{client.username}, Telegram ID: {client.telegram_user_id})."  # Added Telegram ID
+            f"(@{client.username}, Telegram ID: {client.telegram_user_id})."
         )
         await state.finish()
     else:
         await message.reply("Client not found or not selected.")
+        await state.finish()
+
 
 # @dp.message_handler(lambda message: message.reply_to_message and message.from_user.id == ADMIN_CHAT_ID)
 @dp.message_handler(content_types=ContentTypes.ANY)

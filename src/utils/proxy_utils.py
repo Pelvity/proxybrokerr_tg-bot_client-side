@@ -5,7 +5,6 @@ import requests
 
 from src.bot.bot_setup import bot
 from src.bot.config import BASE_API_URL, AUTH_HEADER
-from src.db.repositories.proxy_repositories import ProxyRepository
 from src.db.repositories.connection_repositories import ConnectionRepository 
 from src.db.models.db_models import User, DBProxy, DBProxyConnection
 from src.db.repositories.user_repositories import UserRepository
@@ -26,13 +25,19 @@ user_selections = {}  # Store user proxy selections
 
 
 async def send_proxies(chat_id: int, connections: List[DBProxyConnection]):  
-    buttons = [
-        InlineKeyboardButton(
-            text=f"{connection.proxy.name} | {connection.proxy.expiration_date.strftime('%d/%m/%Y')} | {connection.proxy.days_left} days left",
-            callback_data=f"proxy_{connection.proxy.service_name}_{connection.proxy.auth_token}_{connection.proxy.id}",  
-        ) 
-        for connection in connections
-    ]
+    buttons = []
+    for connection in connections:
+        proxy = connection.proxy 
+        days_left = (connection.expiration_date - datetime.now()).days  # Calculate days left
+        button_text = (
+            f"{proxy.name} | "
+            f"{connection.expiration_date.strftime('%d/%m/%Y')} | "
+            f"{days_left} days left" 
+        )
+        callback_data = f"connection_{connection.id}"  # Include connection ID
+
+        button = InlineKeyboardButton(text=button_text, callback_data=callback_data)
+        buttons.append(button)
 
     keyboard = InlineKeyboardMarkup(row_width=1).add(*buttons)
     await bot.send_message(chat_id=chat_id, text="Your Connections:", reply_markup=keyboard)

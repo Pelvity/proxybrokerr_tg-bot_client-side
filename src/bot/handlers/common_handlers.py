@@ -26,6 +26,32 @@ async def info_command(message: types.Message):
 async def agreement_command(message: types.Message):
     await bot.send_message(chat_id=message.chat.id, text=agreement_text(), reply_markup=client_main_menu())
 
+
+@dp.message_handler(lambda message: message.text == "🌐 My Proxy")
+async def my_proxy_command(message: types.Message):
+    # user_id = message.from_user.id
+    # user_username = message.from_user.username
+    # first_name = message.from_user.first_name
+    # last_name = message.from_user.last_name
+
+    with database.get_session() as session:
+        user_repository = UserRepository(session)
+        user = user_repository.get_or_create_user(message) # Get or create the user
+        
+        #proxy_repository = ProxyRepository(session)
+        #user_proxies = proxy_repository.get_user_proxies(user.id)
+        connection_repository = ConnectionRepository(session)
+        user_connections = connection_repository.get_user_connections(user.id)
+
+    if not user_connections:
+        await bot.send_message(
+            chat_id=message.chat.id, 
+            text="You have no proxies\nBuy it directly:\nhttps://t.me/proxybrokerr"
+        )
+    else:
+        await send_proxies(message.chat.id, user_connections)
+        
+        
 # @dp.message_handler(lambda message: message.text == "🌐 My Proxy")
 # async def my_proxy_command(message: types.Message):
 #     user_id = message.from_user.id
@@ -62,28 +88,3 @@ async def agreement_command(message: types.Message):
 #         else:
 #             await send_proxies(message.chat.id, user_proxies)
 #      # Session is automatically closed here
-
-
-@dp.message_handler(lambda message: message.text == "🌐 My Proxy")
-async def my_proxy_command(message: types.Message):
-    user_id = message.from_user.id
-    user_username = message.from_user.username
-    first_name = message.from_user.first_name
-    last_name = message.from_user.last_name
-
-    with database.get_session() as session:
-        user_repository = UserRepository(session)
-        user = user_repository.get_or_create_user(message) # Get or create the user
-        
-        #proxy_repository = ProxyRepository(session)
-        #user_proxies = proxy_repository.get_user_proxies(user.id)
-        connection_repository = ConnectionRepository(session)
-        user_connections = connection_repository.get_user_connections(user.id)
-
-    if not user_connections:
-        await bot.send_message(
-            chat_id=message.chat.id, 
-            text="You have no proxies\nBuy it directly:\nhttps://t.me/proxybrokerr"
-        )
-    else:
-        await send_proxies(message.chat.id, user_connections)

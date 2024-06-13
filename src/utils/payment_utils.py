@@ -1,8 +1,11 @@
+from typing import List, Tuple
 from aiogram import Bot, types
+from datetime import datetime, timedelta
 from src.bot.config import ADMIN_CHAT_ID
-from datetime import timedelta
+from src.bot.bot_setup import database
+from src.db.models.db_models import DBProxyConnection, Payment
 
-async def send_payment_confirmation_message_to_admin(payment_list, txid, days):
+async def send_payment_confirmation_message_to_admin(payment_list: List[Payment], txid: str, days: int):
     bot = Bot.get_current()
 
     if not payment_list:
@@ -11,68 +14,74 @@ async def send_payment_confirmation_message_to_admin(payment_list, txid, days):
     message_text = "Payment(s) received:\n\n"
 
     for payment in payment_list:
-        proxy = payment.proxy
+        connection = payment.connection  # Access the connection directly
+        new_expiration_date = connection.expiration_date + timedelta(days=days) if connection.expiration_date else datetime.now().date() + timedelta(days=days)
         message_text += f"Payment ID: {payment.id}\n"
         message_text += f"Amount: {payment.amount}\n"
-        message_text += f"User: {payment.user.username}\n"
-        message_text += f"Proxy ID: {proxy.id}\n"
-        message_text += f"Proxy Name: {proxy.name}\n"
-        message_text += f"Current Expiration Date: {proxy.expiration_date.strftime('%d/%m/%Y')}\n"
-        message_text += f"New Expiration Date: {(proxy.expiration_date + timedelta(days=days)).strftime('%d/%m/%Y')}\n\n"
+        message_text += f"User: {payment.user_payments.username}\n"
+        message_text += f"Connection ID: {connection.id}\n"
+        message_text += f"Current Expiration Date: {connection.expiration_date.strftime('%d/%m/%Y') if connection.expiration_date else 'N/A'}\n"
+        message_text += f"New Expiration Date: {new_expiration_date.strftime('%d/%m/%Y')}\n\n"
 
     message_text += f"Transaction ID (TXID): {txid}\n\n"
     message_text += "Confirm or Decline each payment?"
 
+    admin_chat_id = ADMIN_CHAT_ID
     markup = types.InlineKeyboardMarkup()
     for payment in payment_list:
-        confirm_button = types.InlineKeyboardButton(f"Confirm Payment {payment.id}", callback_data=f"confirm_payment:{payment.id}")
-        decline_button = types.InlineKeyboardButton(f"Decline Payment {payment.id}", callback_data=f"decline_payment:{payment.id}")
-        
-        if payment.status == 'confirmed':
-            confirm_button.text += " ✅"
-        elif payment.status == 'declined':
-            decline_button.text += " ❌"
-        
-        markup.add(confirm_button, decline_button)
+        markup.add(
+            types.InlineKeyboardButton(
+                text=f"Confirm Payment {payment.id}", callback_data=f"confirm_payment:{payment.id}"
+            ),
+            types.InlineKeyboardButton(
+                text=f"Decline Payment {payment.id}", callback_data=f"decline_payment:{payment.id}"
+            ),
+        )
 
-    admin_message = await bot.send_message(ADMIN_CHAT_ID, message_text, reply_markup=markup)
-
-    # Save the admin message ID in each Payment object
-    for payment in payment_list:
-        payment.admin_message_id = admin_message.message_id
-        payment.save()
+    await bot.send_message(admin_chat_id, message_text, reply_markup=markup)
 
 async def send_payment_status_message_to_user(user, payment):
     bot = Bot.get_current()
     if payment.status == 'confirmed':
-        message_text = f"Your payment of {payment.amount} has been confirmed for the following proxy:\n"
-        message_text += f"- {payment.proxy.name} (New expiration date: {payment.proxy.expiration_date.strftime('%d/%m/%Y')})\n"
+        message_text = f"✅ Payment {payment.id} confirmed.\nYour payment of {payment.amount} has been confirmed for the following proxy:\n"
+        message_text += f"- {payment.connection.proxy.name} (New expiration date: {payment.end_date.strftime('%d/%m/%Y')})\n"
     elif payment.status == 'declined':
-        message_text = f"Your payment of {payment.amount} for the following proxy has been declined:\n"
-        message_text += f"- {payment.proxy.name}\n"
+        message_text = f"❌ Payment {payment.id} declined.\nYour payment of {payment.amount} for the following proxy has been declined:\n"
+        message_text += f"- {payment.connection.proxy.name}\n"
     else:
         message_text = f"The status of your payment of {payment.amount} is {payment.status}."
     await bot.send_message(user.telegram_chat_id, message_text)
+
+async def send_final_decision_to_admin(payment, final_status):
+    admin_chat_id = ADMIN_CHAT_ID
+    bot = Bot.get_current()
+
+    message_text = f"Final decision:\n"
+    message_text += f"{final_status} Payment {payment.id}.\n"
+
+    await bot.send_message(admin_chat_id, message_text)
 
 async def send_payment_notification_to_admin(payment, status):
     admin_chat_id = ADMIN_CHAT_ID
     bot = Bot.get_current()
 
-    message_text = f"Payment {status.capitalize()}:\n"
+    if status == 'confirmed':
+        message_text = f"✅ Payment {payment.id} confirmed.\n"
+    else:
+        message_text = f"❌ Payment {payment.id} declined.\n"
+
     message_text += f"User ID: {payment.user.id}\n"
     message_text += f"Username: {payment.user.username}\n"
-    message_text += f"Service Name: {payment.proxy.service_name}\n"
-    message_text += f"Connection ID: {payment.proxy.auth_token}\n"
-    message_text += f"Connection Name: {payment.proxy.name}\n"
+    message_text += f"Service Name: {payment.connection.proxy.service_name}\n"
+    message_text += f"Connection ID: {payment.connection.id}\n"
+    message_text += f"Connection Name: {payment.connection.proxy.name}\n"
     message_text += f"Payment Amount: {payment.amount}\n"
 
-    if status == 'approved':
+    if status == 'confirmed':
         message_text += f"Start Date: {payment.start_date.strftime('%d/%m/%Y')}\n"
         message_text += f"End Date: {payment.end_date.strftime('%d/%m/%Y')}\n"
 
-    # Send the payment notification as a reply to the original admin message
-    await bot.send_message(admin_chat_id, message_text, reply_to_message_id=payment.admin_message_id)
-
+    await bot.send_message(admin_chat_id, message_text)
 
 def calculate_payment_amount(days):
     # Define the prices for different durations
@@ -88,10 +97,28 @@ def calculate_payment_amount(days):
     else:
         return price_per_day * days
 
+def calculate_total_payment_amount(
+    connections: List[DBProxyConnection], days: int
+) -> Tuple[float, List[Tuple[DBProxyConnection, float]]]:  # Use typing.Tuple
+    """
+    Calculates the total payment amount for selected connections and days.
+    """
+    total_amount = 0
+    payment_items: List[Tuple[DBProxyConnection, float]] = []  
+
+    for connection in connections:
+        try:
+            amount = calculate_payment_amount(days) 
+            total_amount += amount
+            payment_items.append((connection, amount)) 
+        except ValueError as e:
+            print(f"Error calculating payment for connection {connection.id}: {e}")
+
+    return total_amount, payment_items 
+
 def get_payment_id_from_callback(callback_query: types.CallbackQuery):
     _, payment_id = callback_query.data.split(":")
     return int(payment_id)
-
 
 def update_selected_proxies(proxy_id, selected_proxy_ids):
     if proxy_id in selected_proxy_ids:

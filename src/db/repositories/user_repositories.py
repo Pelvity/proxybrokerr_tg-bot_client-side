@@ -1,11 +1,14 @@
+import json
 import pytz
 from datetime import datetime
 import logging
 from typing import Optional, Tuple
 from typing import List
 
-from src.db.models.db_models import User, UserType, UserHistory, DBProxy
+
+from src.db.models.db_models import User, UserType, DBProxy, UserHistory
 from src.bot.config import USER_TIMEZONE
+from sqlalchemy.orm.exc import NoResultFound
     
 USER_TIMEZONE = 'Europe/Warsaw'
 
@@ -25,42 +28,27 @@ class UserRepository:
                     'username': message.from_user.username,
                     'first_name': message.from_user.first_name,
                     'last_name': message.from_user.last_name,
-                    'joined_at': message.date.astimezone(timezone),
-                    'last_message_at': message.date.astimezone(timezone),
+                    'joined_at': message.date.astimezone(pytz.utc),  # Store as UTC
+                    'last_message_at': message.date.astimezone(pytz.utc),  # Store as UTC
                     'user_type': user_type
                 }
             else:
                 user_data = {
                     'user_type': user_type,
-                    'joined_at': datetime.now(timezone),
+                    'joined_at': datetime.now(pytz.utc),  # Store as UTC
                 }
 
-            user, created = User.get_or_create(self.session, **user_data)
+            try:
+                user = self.session.query(User).filter_by(telegram_user_id=user_data['telegram_user_id']).one()
+                created = False
+            except NoResultFound:
+                user = User(**user_data)
+                self.session.add(user)
+                self.session.commit()
+                created = True
 
             if not created:
-                # Check for changes and log to UserHistory (including user_type)
-                for field in ['telegram_chat_id', 'username', 'first_name', 'last_name']:
-                    old_value = getattr(user, field)
-                    new_value = user_data.get(field)
-
-                    if old_value != new_value:
-                        history_entry = UserHistory(
-                            user_id=user.id,
-                            timestamp=datetime.now(timezone.utc),
-                            user_type=user_type,
-                            changed_field=field,
-                            old_value=old_value,
-                            new_value=new_value
-                        )
-                        self.session.add(history_entry)
-
-                # Update user attributes 
-                user.telegram_chat_id = user_data.get('telegram_chat_id')
-                user.username = user_data.get('username')
-                user.first_name = user_data.get('first_name')
-                user.last_name = user_data.get('last_name')
-                user.last_message_at = user_data['last_message_at']
-                self.session.commit()
+                self._update_user_and_log_history(user, user_data, timezone)
 
             return user
 
@@ -85,17 +73,38 @@ class UserRepository:
             print(f"Error getting or creating user by username: {e}")
             return None 
         
+    def _update_user_and_log_history(self, user, user_data, timezone):
+        """Updates user attributes and logs changes to UserHistory."""
+        for field in ['telegram_chat_id', 'username', 'first_name', 'last_name', 'user_type']:
+            old_value = getattr(user, field)
+            new_value = user_data.get(field)
+
+            if old_value != new_value:
+                history_entry = UserHistory(
+                    user_id=user.id,
+                    timestamp=datetime.now(pytz.utc),  # Log timestamps in UTC
+                    action=f"{field}_changed",
+                    details={
+                        "old_value": old_value,
+                        "new_value": new_value
+                    }
+                )
+                self.session.add(history_entry)
+
+                setattr(user, field, new_value)  # Update the user attribute
+
+        user.last_message_at = user_data.get('last_message_at', datetime.now(pytz.utc))
+        self.session.commit()
+
     def update_user(self, user, message):
         """Updates user attributes based on message data."""
         try:
             timezone = pytz.timezone(USER_TIMEZONE)
-
             if user.telegram_chat_id != message.chat.id:
                 user.telegram_chat_id = message.chat.id
-            if user.last_message_at != message.date.astimezone(timezone):
-                user.last_message_at = message.date.astimezone(timezone)
 
-            self.session.commit()  # Commit the changes
+            user.last_message_at = message.date.astimezone(pytz.utc)  # Convert to UTC before saving
+            self.session.commit()
 
         except Exception as e:
             logging.exception(f"Error updating user in database: {e}")
@@ -131,9 +140,71 @@ class UserRepository:
             print(f"Error getting or creating user: {e}")
             return None, False
 
+    def get_all_users(self) -> List[User]:
+        """Gets all users from the database."""
+        return self.session.query(User).all()
+
+    def get_user_by_id(self, user_id: int) -> Optional[User]:
+        """Gets a user by ID."""
+        return self.session.query(User).get(user_id)
     # def get_user_proxies(self, user_id: int) -> List[DBProxy]:
     #     return (
     #         self.session.query(DBProxy)
     #         .filter_by(user_id=user_id)
     #         .all()
     #     )
+    
+    
+    def get_user_by_telegram_user_id(self, telegram_user_id: int) -> Optional[User]:
+        """Gets a user by Telegram user ID."""
+        try:
+            return self.session.query(User).filter_by(telegram_user_id=telegram_user_id).one()
+        except NoResultFound:
+            return None
+        
+    def _extract_user_data(self, message, user_type) -> dict:
+        """Extracts user data from the message."""
+        return {
+            'telegram_user_id': message.from_user.id,
+            'telegram_chat_id': message.chat.id,
+            'username': message.from_user.username,
+            'first_name': message.from_user.first_name,
+            'last_name': message.from_user.last_name,
+            'joined_at': message.date.astimezone(pytz.utc),
+            'last_message_at': message.date.astimezone(pytz.utc),
+            'user_type': user_type
+        }
+        
+    def _get_or_create_user_by_telegram_id(self, user_data: dict) -> Tuple[User, bool]:
+        """Gets or creates a User by Telegram ID."""
+        try:
+            user = self.session.query(User).filter_by(telegram_user_id=user_data['telegram_user_id']).one()
+            return user, False
+        except NoResultFound:
+            user = User(**user_data)
+            self.session.add(user)
+            self.session.commit()
+            return user, True
+        
+    def _update_user_and_log_history(self, user, user_data, timezone):
+        """Updates user attributes and logs changes to UserHistory."""
+        for field in ['telegram_chat_id', 'username', 'first_name', 'last_name', 'user_type']:
+            old_value = getattr(user, field)
+            new_value = user_data.get(field)
+
+            if old_value != new_value:
+                history_entry = UserHistory(
+                    user_id=user.id,
+                    timestamp=datetime.now(pytz.utc),  # Log timestamps in UTC
+                    action=f"{field}_changed",
+                    details=json.dumps({  # Serialize the details dictionary to a JSON string
+                        "old_value": old_value,
+                        "new_value": new_value
+                    })
+                )
+                self.session.add(history_entry)
+
+                setattr(user, field, new_value)  # Update the user attribute
+
+        user.last_message_at = user_data.get('last_message_at', datetime.now(pytz.utc))
+        self.session.commit()
