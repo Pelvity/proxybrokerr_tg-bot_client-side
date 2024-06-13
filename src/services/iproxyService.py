@@ -282,6 +282,7 @@ class IProxyManager(ProxyServiceInterface):
                     logging.error(error_message)
                     return 0, 0, "N/A", "", error_message
 
+
     async def sync_connections(self):
         """Synchronizes proxy connections from the IProxy API."""
         try:
@@ -297,23 +298,13 @@ class IProxyManager(ProxyServiceInterface):
                 # Fetch all proxies from the API
                 api_proxy_ids = {proxy.id for proxy in api_proxies}
 
-                # Identify proxies that are in the database but not in the API (deleted proxies)
-                deleted_proxy_ids = db_proxy_ids - api_proxy_ids
-
-                # Process deleted proxies
-                for deleted_proxy_id in deleted_proxy_ids:
-                    db_proxy = session.query(DBProxy).filter_by(id=deleted_proxy_id).first()
-                    if db_proxy:
-                        db_proxy.active = False  # Mark the proxy as inactive or deleted
-                        for db_connection in db_proxy.connections:
-                            db_connection.deleted = True  # Mark all associated connections as deleted
-                            self._create_connection_history(session, db_connection)
-                        session.commit()
+                # Identify and process deleted proxies
+                self._process_deleted_proxies(session, db_proxy_ids, api_proxy_ids)
 
                 # Process existing and new proxies from the API
                 for api_proxy in api_proxies:
                     user = await self._get_or_create_user_from_proxy(session, user_repository, api_proxy)
-                    if user is None:
+                    if not user:
                         print(f"Skipping proxy {api_proxy.id} due to user resolution issue.")
                         continue
 
@@ -322,16 +313,25 @@ class IProxyManager(ProxyServiceInterface):
                     await self._sync_proxy_connections(session, db_proxy, api_connections, user_repository)
 
         except IntegrityError as e:
-            print(
-                f"Failed to create or update DBProxy or DBProxyConnection due to IntegrityError: {e}"
-            )
+            print(f"Failed to create or update DBProxy or DBProxyConnection due to IntegrityError: {e}")
         except Exception as e:
             print(f"An error occurred while syncing connections: {e}")
 
+    def _process_deleted_proxies(self, session, db_proxy_ids, api_proxy_ids):
+        """Mark proxies as deleted if they are in the database but not in the API."""
+        deleted_proxy_ids = db_proxy_ids - api_proxy_ids
+        for deleted_proxy_id in deleted_proxy_ids:
+            db_proxy = session.query(DBProxy).filter_by(id=deleted_proxy_id).first()
+            if db_proxy:
+                db_proxy.active = False  # Mark the proxy as inactive or deleted
+                for db_connection in db_proxy.connections:
+                    db_connection.deleted = True  # Mark all associated connections as deleted
+                    self._create_connection_history(session, db_connection)
+                session.commit()
+
     async def _get_or_create_user_from_proxy(self, session, user_repository, api_proxy) -> Optional[User]:
         """Fetches or creates a user based on API proxy data (username only)."""
-        user = user_repository.get_or_create_user_by_username(session, api_proxy.user)
-        return user
+        return user_repository.get_or_create_user_by_username(session, api_proxy.user)
 
     def _get_or_create_proxy(self, session, api_proxy, user):
         """Gets or creates a DBProxy based on the API proxy data."""
@@ -397,30 +397,31 @@ class IProxyManager(ProxyServiceInterface):
                         setattr(db_connection, key, value)
                     db_connection.updated_timestamp = datetime.now(timezone.utc)
 
-        # Mark connections as deleted if not found in the API data
+        # Move deleted connections to history
+        self._handle_deleted_connections(session, db_proxy.id, api_connection_ids)
+
+        session.commit()
+
+    def _has_connection_data_changed(self, db_connection, connection_data):
+        """Check if relevant connection data has changed."""
+        for attr in ['name', 'description', 'host', 'port', 'login', 'password', 'connection_type', 'user_id']:
+            if getattr(db_connection, attr) != connection_data.get(attr):
+                return True
+        return False
+
+    def _handle_deleted_connections(self, session, proxy_id, api_connection_ids):
+        """Mark connections as deleted if not found in the API data and move to history."""
         deleted_connections = (
             session.query(DBProxyConnection)
             .filter(
-                DBProxyConnection.id == db_proxy.id,
+                DBProxyConnection.proxy_id == proxy_id,
                 DBProxyConnection.id.notin_(api_connection_ids),
             )
             .all()
         )
         for deleted_connection in deleted_connections:
             self._create_connection_history(session, deleted_connection)
-            deleted_connection.deleted = True
-
-        session.commit()
-
-    def _has_connection_data_changed(self, db_connection, connection_data):
-        """Check if relevant connection data has changed."""
-        for attr in [
-            'name', 'description', 'host', 'port', 'login', 'password',
-            'connection_type', 'user_id'
-        ]:
-            if getattr(db_connection, attr) != connection_data.get(attr):
-                return True
-        return False
+            session.delete(deleted_connection)
 
     def _create_connection_history(self, session, db_connection):
         """Create a new connection history entry."""
