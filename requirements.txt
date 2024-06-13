@@ -6,3 +6,4 @@ python-dotenv
 peewee
 boto3
 botocore
+sqlalchemy
