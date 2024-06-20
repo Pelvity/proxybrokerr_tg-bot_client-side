@@ -12,4 +12,5 @@ class LoggingMiddleware(BaseMiddleware):
         super().__init__()
 
     async def on_pre_process_message(self, message: types.Message, data: dict):
+        self.custom_logger.info(f"Pre-processing message from user {message.from_user.id}")
         log_user_interaction(message, self.custom_logger)
