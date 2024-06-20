@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from src.db.models.db_models import Payment, DBProxyConnection
+from src.db.models.db_models import CryptoPayment, Payment, DBProxyConnection
 
 class PaymentRepository:
     def __init__(self, session):
@@ -38,19 +38,37 @@ class PaymentRepository:
         """Gets a payment by its ID."""
         return self.session.query(Payment).get(payment_id)
 
-    def confirm_payment(self, payment: Payment):
+    def confirm_payment(self, payment: Payment, txid: str):
         """Confirms a payment and extends the proxy connection expiration date."""
         if payment.status != 'confirmed':
             payment.status = 'confirmed'
             connection = payment.connection
             connection.expiration_date = payment.end_date
+
+            # Handle CryptoPayment
+            if payment.payment_method == 'crypto':
+                crypto_payment = self.session.query(CryptoPayment).filter_by(payment_id=payment.id).first()
+                if not crypto_payment:
+                    crypto_payment = CryptoPayment(payment_id=payment.id, txid=txid)
+                    self.session.add(crypto_payment)
+                else:
+                    crypto_payment.txid = txid
+
             self.session.commit()
 
+
+
+
     def decline_payment(self, payment: Payment):
-        """Declines a payment and reverts the expiration date if previously confirmed."""
-        if payment.status == 'confirmed':
-            connection = payment.connection
-            previous_expiration_date = connection.expiration_date - (payment.end_date - payment.start_date)
-            connection.expiration_date = previous_expiration_date
+        """Declines a payment and handles associated records."""
         payment.status = 'declined'
+
+        # Handle CryptoPayment
+        if payment.payment_method == 'crypto':
+            crypto_payment = self.session.query(CryptoPayment).filter_by(payment_id=payment.id).first()
+            if crypto_payment:
+                self.session.delete(crypto_payment)
+
         self.session.commit()
+
+

@@ -23,7 +23,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
 
 @dp.message_handler(content_types=types.ContentTypes.ANY)
 async def forward_client_message(message: types.Message):
-    if message.text == "🌐 My Proxy":
+    if message.text == "🌐 My Connections":
         now = datetime.now()
         result = await get_connections()
 

@@ -27,7 +27,7 @@ async def agreement_command(message: types.Message):
     await bot.send_message(chat_id=message.chat.id, text=agreement_text(), reply_markup=client_main_menu())
 
 
-@dp.message_handler(lambda message: message.text == "🌐 My Proxy")
+@dp.message_handler(lambda message: message.text == "🌐 My Connections")
 async def my_proxy_command(message: types.Message):
     # user_id = message.from_user.id
     # user_username = message.from_user.username
@@ -52,7 +52,7 @@ async def my_proxy_command(message: types.Message):
         await send_proxies(message.chat.id, user_connections)
         
         
-# @dp.message_handler(lambda message: message.text == "🌐 My Proxy")
+# @dp.message_handler(lambda message: message.text == "🌐 My Connections")
 # async def my_proxy_command(message: types.Message):
 #     user_id = message.from_user.id
 #     user_username = message.from_user.username

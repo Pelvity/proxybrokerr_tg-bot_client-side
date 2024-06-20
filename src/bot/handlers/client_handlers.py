@@ -108,7 +108,7 @@ async def handle_pay_command(message: types.Message, state: FSMContext):
             await state.update_data(selected_connection_ids=[])  # Initialize selected connections
             await state.update_data(user_id=user.id)  # Store user_id in state data
             await state.update_data(telegram_user_id=message.from_user.id) 
-            keyboard = generate_connection_selection_keyboard(connections, user_id=user.id)  # Pass user_id to the keyboard generator
+            keyboard = generate_connection_selection_keyboard(connections, user_id=user.id, selected_ids=[])  # Pass user_id to the keyboard generator
             await message.answer("Select the connections you want to pay for:", reply_markup=keyboard)
         else:
             await message.answer("You currently have no connections to pay for.")

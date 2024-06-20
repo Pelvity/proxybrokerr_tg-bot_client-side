@@ -1,11 +1,19 @@
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 from aiogram import Bot, types
 from datetime import datetime, timedelta
 from src.bot.config import ADMIN_CHAT_ID
 from src.bot.bot_setup import database
 from src.db.models.db_models import DBProxyConnection, Payment
+from aiogram.dispatcher import FSMContext
 
-async def send_payment_confirmation_message_to_admin(payment_list: List[Payment], txid: str, days: int):
+from typing import List, Dict
+from aiogram import Bot, types
+from datetime import timedelta, datetime
+from aiogram.dispatcher import FSMContext
+
+admin_state_data = {}
+
+async def send_payment_confirmation_message_to_admin(payment_list: List[Payment], txid: str, selected_connection_days: Dict[int, int]):
     bot = Bot.get_current()
 
     if not payment_list:
@@ -14,9 +22,11 @@ async def send_payment_confirmation_message_to_admin(payment_list: List[Payment]
     message_text = "Payment(s) received:\n\n"
 
     for payment in payment_list:
-        connection = payment.connection  # Access the connection directly
+        connection = payment.connection
+        days = selected_connection_days.get(connection.id, 0)
         new_expiration_date = connection.expiration_date + timedelta(days=days) if connection.expiration_date else datetime.now().date() + timedelta(days=days)
         message_text += f"Payment ID: {payment.id}\n"
+        message_text += f"Connection login: {connection.login}\n"
         message_text += f"Amount: {payment.amount}\n"
         message_text += f"User: {payment.user_payments.username}\n"
         message_text += f"Connection ID: {connection.id}\n"
@@ -28,7 +38,9 @@ async def send_payment_confirmation_message_to_admin(payment_list: List[Payment]
 
     admin_chat_id = ADMIN_CHAT_ID
     markup = types.InlineKeyboardMarkup()
+    payment_ids = []
     for payment in payment_list:
+        payment_ids.append(payment.id)
         markup.add(
             types.InlineKeyboardButton(
                 text=f"Confirm Payment {payment.id}", callback_data=f"confirm_payment:{payment.id}"
@@ -38,16 +50,25 @@ async def send_payment_confirmation_message_to_admin(payment_list: List[Payment]
             ),
         )
 
-    await bot.send_message(admin_chat_id, message_text, reply_markup=markup)
+    sent_message = await bot.send_message(admin_chat_id, message_text, reply_markup=markup)
+
+    # Store the message ID, chat ID, original message text, and payment IDs in the shared storage
+    admin_state_data['admin_message_id'] = sent_message.message_id
+    admin_state_data['admin_chat_id'] = admin_chat_id
+    admin_state_data['original_message_text'] = message_text
+    admin_state_data['payment_ids'] = payment_ids
+
+
+
+
+
 
 async def send_payment_status_message_to_user(user, payment):
     bot = Bot.get_current()
     if payment.status == 'confirmed':
-        message_text = f"✅ Payment {payment.id} confirmed.\nYour payment of {payment.amount} has been confirmed for the following proxy:\n"
-        message_text += f"- {payment.connection.proxy.name} (New expiration date: {payment.end_date.strftime('%d/%m/%Y')})\n"
+        message_text = f"✅ Payment {payment.id} confirmed.\nConnection: {payment.connection.login}\nPrice: {payment.amount}\nExpiration date: {payment.start_date.strftime('%d/%m/%Y')} -> {payment.end_date.strftime('%d/%m/%Y')}"
     elif payment.status == 'declined':
-        message_text = f"❌ Payment {payment.id} declined.\nYour payment of {payment.amount} for the following proxy has been declined:\n"
-        message_text += f"- {payment.connection.proxy.name}\n"
+        message_text = f"❌ Payment {payment.id} declined.\nConnection: {payment.connection.login}\nPrice: {payment.amount}"
     else:
         message_text = f"The status of your payment of {payment.amount} is {payment.status}."
     await bot.send_message(user.telegram_chat_id, message_text)
@@ -89,10 +110,6 @@ def calculate_payment_amount(days):
     price_per_week = 15
     price_per_month = 50
 
-    # Calculate the price per day and per week
-    daily_rate_month = price_per_month / 30
-    daily_rate_week = price_per_week / 7
-
     # Calculate the number of months, weeks, and remaining days
     months = days // 30
     days_remaining_after_months = days % 30
@@ -101,34 +118,30 @@ def calculate_payment_amount(days):
     days_remaining_after_weeks = days_remaining_after_months % 7
 
     # Calculate the total cost
-    total_cost = (months * price_per_month) + (weeks * price_per_week) + (days_remaining_after_weeks * daily_rate_month)
+    if days < 7:
+        total_cost = days * price_per_day
+    else:
+        total_cost = (months * price_per_month) + (weeks * price_per_week) + (days_remaining_after_weeks * price_per_day)
 
-    return round(total_cost,2)
+    return round(total_cost, 2)
 
-def calculate_total_payment_amount(connections: List[DBProxyConnection], days: int) -> Tuple[float, List[Tuple[DBProxyConnection, float]]]:
-    total_amount = 0
+def calculate_total_payment_amount(connections: List[DBProxyConnection], days: Dict[str, int]) -> Tuple[float, List[Tuple[DBProxyConnection, float]]]:
+    total_amount = 0.0
     payment_items = []
-
     for connection in connections:
-        try:
-            amount = calculate_payment_amount(days)
-            total_amount += amount
-            payment_items.append((connection, amount))
-        except ValueError as e:
-            print(f"Error calculating payment for connection {connection.id}: {e}")
-
+        connection_days = days.get(connection.id, 0)
+        amount = calculate_payment_amount(connection_days)
+        total_amount += amount
+        payment_items.append((connection, amount))
     return total_amount, payment_items
 
-# The handler functions remain mostly unchanged, ensure to use the updated calculate_payment_amount function where necessary.
+# def get_payment_id_from_callback(callback_query: types.CallbackQuery):
+#     _, payment_id = callback_query.data.split(":")
+#     return int(payment_id)
 
-
-def get_payment_id_from_callback(callback_query: types.CallbackQuery):
-    _, payment_id = callback_query.data.split(":")
-    return int(payment_id)
-
-def update_selected_proxies(proxy_id, selected_proxy_ids):
-    if proxy_id in selected_proxy_ids:
-        selected_proxy_ids.remove(proxy_id)
-    else:
-        selected_proxy_ids.append(proxy_id)
-    return selected_proxy_ids
+# def update_selected_proxies(proxy_id, selected_proxy_ids):
+#     if proxy_id in selected_proxy_ids:
+#         selected_proxy_ids.remove(proxy_id)
+#     else:
+#         selected_proxy_ids.append(proxy_id)
+#     return selected_proxy_ids

@@ -1,140 +1,426 @@
-good. 
-1. user table should also have columns for last time user message in bot 
-2. status (if client is active or is it ex client already)
-3. "Clients" button in main menu for admin only that would print out buttons menu with all clients (each button means chat with exact client). after admin choose client than it "opens" chat with exact client (start resending 
+package pl.pollub.test;
+
+import android.os.Bundle;
+import androidx.appcompat.app.AppCompatActivity;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.View;
+import android.widget.EditText;
+import android.widget.Toast;
+import androidx.appcompat.widget.Toolbar;
+
+public class MainActivity extends AppCompatActivity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        Toolbar toolbar = findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
+
+        if (savedInstanceState == null) {
+            getSupportFragmentManager().beginTransaction()
+                    .replace(R.id.fragment_container, new DrawingFragment())
+                    .commit();
+        }
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.main_menu, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        switch (item.getItemId()) {
+            case R.id.action_saved_drawings:
+                showSavedDrawings();
+                return true;
+            default:
+                return super.onOptionsItemSelected(item);
+        }
+    }
+
+    public void showSavedDrawings() {
+        getSupportFragmentManager().beginTransaction()
+                .replace(R.id.fragment_container, new SavedDrawingsFragment())
+                .addToBackStack(null)
+                .commit();
+    }
+}
 
 
-also i want to save user payments history but i don't have automatical payment system so im planning so it be like that for now:
-1. User get notification about proxy renting end in bot with "Payed" button
-2. User make payment manually (for example on binance) and press "Payed"
-3. Admin get notification about payment (like "User ... payed for proxy ... rent from date ... to date ....) with "Confirm" button
-4. Admin manually check payment and press "Confirm" if everything ok 
-5. payment is saved in db
+package pl.pollub.test;
 
+import android.graphics.Bitmap;
+import android.os.Bundle;
+import androidx.fragment.app.Fragment;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import java.util.ArrayList;
+import java.util.List;
 
+public class SavedDrawingsFragment extends Fragment {
 
-good. now it create tables 
-1. one proxy work on one phone (physical). one phone can have one or more phone numbers (my phone numbers and not userPhoneNumbers) related to this phone
-i want so db have table for phones and its info:
-model, imei, description, date of buying, phone number that is used (foreign key)
-and table for sim cart (or create better name): 
-phone number, long number on sim cart (forgot name) like id
-also i want so all info about connection (include phone and sim cart) was saved in history (so i don't lose data when phone or user of connection changes)
-i already have DBProxyHistory, but modify or remake db logics as senior would do. you have all info about topics in which im working
+    private static final List<Bitmap> savedDrawings = new ArrayList<>();
+    private RecyclerView recyclerView;
 
+    public static void addDrawing(Bitmap bitmap) {
+        savedDrawings.add(bitmap);
+    }
 
-ok, but connection is just way to connect to proxy. what if more than one user gonna use one proxy ? isn't it better to save history based on each connection ?
-if not than do what senior would do 
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        View view = inflater.inflate(R.layout.fragment_saved_drawings, container, false);
+        recyclerView = view.findViewById(R.id.recycler_view);
+        recyclerView.setLayoutManager(new LinearLayoutManager(getActivity()));
+        recyclerView.setAdapter(new DrawingsAdapter(savedDrawings));
+        return view;
+    }
+}
 
+package pl.pollub.test;
 
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.util.AttributeSet;
+import android.util.Log;
+import android.view.MotionEvent;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 
-ok, so check my version.
-remember that one user can have one or more proxies. each proxy can have zero or more connections (ways to connect). User receive connection info (it don't receive any info about proxy itself). phones and sim cards i told u already. so is logics of db ok ?
+public class DrawingSurface extends SurfaceView implements SurfaceHolder.Callback, Runnable {
 
+    private static final String TAG = "DrawingSurface";
+    private SurfaceHolder mHolder;
+    private Thread mDrawingThread;
+    private boolean mIsDrawing;
+    private Bitmap mBitmap;
+    private Canvas mBitmapCanvas;
+    private Paint mPaint;
+    private float mX, mY;
+    private float mCircleSize = 10.0f;
+    private float mLineSize = 5.0f;
+    private float startX, startY, endX, endY;
+    private boolean isDrawingLine = false;
 
-in Proxies table i have id (not autoincrement) and authToken that just duplicating proxy id (authToken). how would senior do ? remove id or authToken table 
+    public DrawingSurface(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        mHolder = getHolder();
+        mHolder.addCallback(this);
+        mPaint = new Paint();
+        mPaint.setColor(Color.BLUE);
+        mPaint.setStrokeWidth(mLineSize);
+        mPaint.setStyle(Paint.Style.STROKE);
+        Log.d(TAG, "DrawingSurface initialized");
+    }
 
+    @Override
+    public void surfaceCreated(SurfaceHolder holder) {
+        Log.d(TAG, "Surface created");
+        mBitmap = Bitmap.createBitmap(getWidth(), getHeight(), Bitmap.Config.ARGB_8888);
+        mBitmapCanvas = new Canvas(mBitmap);
+        startDrawing();
+    }
 
-so would it be better to save just change of connection and when it was made or save current state of connection (all data) and timestamp when it was changed ?
+    @Override
+    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+        Log.d(TAG, "Surface changed");
+    }
 
+    @Override
+    public void surfaceDestroyed(SurfaceHolder holder) {
+        Log.d(TAG, "Surface destroyed");
+        stopDrawing();
+    }
 
-Redundancy: Stores redundant data if some fields don't change often.
+    private void startDrawing() {
+        mIsDrawing = true;
+        mDrawingThread = new Thread(this);
+        mDrawingThread.start();
+        Log.d(TAG, "Drawing thread started");
+    }
 
-but i don't want to save duplicates of connection data. save only if connection data change or if connection was deleted
-im not changing my connection data often (only if user changes) so i want so it save all connection data if it was modified
-give me full modified code for iproxyService.py firstly (WITHOUT SKIPS):
-    async def sync_connections(self):
-        """Synchronizes proxy connections from the IProxy API."""
-        try:
-            api_proxies = await self.getAllProxies()
+    private void stopDrawing() {
+        mIsDrawing = false;
+        try {
+            mDrawingThread.join();
+            Log.d(TAG, "Drawing thread stopped");
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
 
-            with database_service.get_session() as session:
-                user_repository = UserRepository(session)
-                for api_proxy in api_proxies:
-                    user = await self._get_or_create_user_from_proxy(session, user_repository, api_proxy)
-                    if user is None: 
-                        print(f"Skipping proxy {api_proxy.id} due to user resolution issue.")
-                        continue
+    @Override
+    public void run() {
+        while (mIsDrawing) {
+            Canvas canvas = null;
+            try {
+                canvas = mHolder.lockCanvas();
+                synchronized (mHolder) {
+                    if (canvas != null) {
+                        drawSomething(canvas);
+                    }
+                }
+            } finally {
+                if (canvas != null) {
+                    mHolder.unlockCanvasAndPost(canvas);
+                }
+            }
+            try {
+                Thread.sleep(20); // ~60 FPS
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }
 
-                    db_proxy = self._get_or_create_proxy(session, api_proxy, user)
-                    api_connections = await self.getConnectionsOfProxy(api_proxy.authToken)
-                    self._sync_proxy_connections(session, db_proxy, api_connections, user_repository)  # Pass user_repository here
+    private void drawSomething(Canvas canvas) {
+        canvas.drawColor(Color.WHITE); // Clear the background
+        canvas.drawBitmap(mBitmap, 0, 0, null); // Draw the bitmap onto the canvas
+    }
 
-        except IntegrityError as e:
-            print(f"Failed to create or update DBProxy due to IntegrityError: {e}")
-        except Exception as e:
-            print(f"An error occurred while syncing connections: {e}")
-    
-    async def _get_or_create_user_from_proxy(self, session, user_repository, api_proxy) -> Optional[User]:
-        """Fetches or creates a user based on API proxy data (username only)."""
-        user = user_repository.get_or_create_user_by_username(session, api_proxy.user) 
-        return user
-    
-    def _get_or_create_proxy(self, session, api_proxy, user):
-        """Gets or creates a DBProxy based on the API proxy data."""
-        db_proxy = session.query(DBProxy).filter_by(id=api_proxy.id).first()
-        if db_proxy is None:
-            db_proxy = DBProxy(
-                id=api_proxy.id,
-                phone_id=None,  
-                name=api_proxy.name,
-                # user_id=user.id,  # REMOVE THIS LINE - no longer in DBProxy
-                expiration_date=api_proxy.expiration_date,
-                #hours_left=api_proxy.hours_left,
-                tariff_plan=api_proxy.tariff_plan,
-                tariff_expiration_date=api_proxy.tariff_expiration_date,
-                tariff_days_left=api_proxy.tariff_days_left,
-                device_model=api_proxy.deviceModel,
-                active=api_proxy.active,
-                service_name='ipr',
-            )
-            session.add(db_proxy)
-            session.commit()
-        else:
-            update_proxy(db_proxy, api_proxy.__dict__, session)
-        return db_proxy
-    
-    def _sync_proxy_connections(self, session, db_proxy, api_connections, user_repository):
-        """Synchronizes DBProxyConnection records for the given proxy."""
-        api_connection_ids = {api_connection.id for api_connection in api_connections}
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        switch (event.getAction()) {
+            case MotionEvent.ACTION_DOWN:
+                startX = event.getX();
+                startY = event.getY();
+                isDrawingLine = true;
+                break;
+            case MotionEvent.ACTION_MOVE:
+                endX = event.getX();
+                endY = event.getY();
+                synchronized (mHolder) {
+                    mBitmapCanvas.drawLine(startX, startY, endX, endY, mPaint);
+                    startX = endX;
+                    startY = endY;
+                }
+                break;
+            case MotionEvent.ACTION_UP:
+                endX = event.getX();
+                endY = event.getY();
+                synchronized (mHolder) {
+                    mBitmapCanvas.drawLine(startX, startY, endX, endY, mPaint);
+                    // Draw circles at the start and end points
+                    mBitmapCanvas.drawCircle(startX, startY, mCircleSize, mPaint);
+                    mBitmapCanvas.drawCircle(endX, endY, mCircleSize, mPaint);
+                }
+                isDrawingLine = false;
+                break;
+        }
+        return true;
+    }
 
-        for api_connection in api_connections:
-            created_datetime = datetime.fromtimestamp(api_connection.created_timestamp / 1000)
-            user = user_repository.get_or_create_user_by_username(session, api_connection.user)
-            connection_data = {
-                'id': api_connection.id,
-                'proxy_id': db_proxy.id,
-                'user_id': user.id if user else None,
-                'created_timestamp': created_datetime,
-                'name': api_connection.name,
-                'description': api_connection.description,
-                'host': getattr(api_connection, 'host', ''),
-                'port': getattr(api_connection, 'port', 0),
-                'login': getattr(api_connection, 'login', ''),
-                'password': getattr(api_connection, 'password', ''),
-                'connection_type': getattr(api_connection, 'type', ''),
-                'active': api_connection.active,
-                'deleted': False,
-                'user_id': user.id if user else None,  # Assign user ID to the connection
+    public void setPaintColor(int color) {
+        mPaint.setColor(color);
+    }
+
+    public void setCircleSize(float circleSize) {
+        mCircleSize = circleSize;
+    }
+
+    public void setLineSize(float lineSize) {
+        mLineSize = lineSize;
+        mPaint.setStrokeWidth(mLineSize);
+    }
+
+    public void clear() {
+        synchronized (mHolder) {
+            mBitmap.eraseColor(Color.WHITE);
+        }
+        invalidate();
+    }
+
+    public Bitmap getBitmap() {
+        return mBitmap;
+    }
+}
+
+package pl.pollub.test;
+
+import android.graphics.Bitmap;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ImageView;
+import androidx.annotation.NonNull;
+import androidx.recyclerview.widget.RecyclerView;
+import java.util.List;
+
+public class DrawingsAdapter extends RecyclerView.Adapter<DrawingsAdapter.ViewHolder> {
+
+    private List<Bitmap> drawings;
+
+    public DrawingsAdapter(List<Bitmap> drawings) {
+        this.drawings = drawings;
+    }
+
+    @NonNull
+    @Override
+    public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_drawing, parent, false);
+        return new ViewHolder(view);
+    }
+
+    @Override
+    public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
+        holder.imageView.setImageBitmap(drawings.get(position));
+    }
+
+    @Override
+    public int getItemCount() {
+        return drawings.size();
+    }
+
+    static class ViewHolder extends RecyclerView.ViewHolder {
+        ImageView imageView;
+
+        ViewHolder(View itemView) {
+            super(itemView);
+            imageView = itemView.findViewById(R.id.drawing_image);
+        }
+    }
+}
+
+package pl.pollub.test;
+
+import android.graphics.Bitmap;
+import android.graphics.Color;
+import android.os.Bundle;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.SeekBar;
+import androidx.fragment.app.Fragment;
+
+public class DrawingFragment extends Fragment {
+
+    private DrawingSurface mDrawingSurface;
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        View view = inflater.inflate(R.layout.fragment_drawing, container, false);
+        mDrawingSurface = view.findViewById(R.id.drawing_surface);
+
+        Button redButton = view.findViewById(R.id.color_red);
+        Button yellowButton = view.findViewById(R.id.color_yellow);
+        Button blueButton = view.findViewById(R.id.color_blue);
+        Button greenButton = view.findViewById(R.id.color_green);
+        Button clearButton = view.findViewById(R.id.clear_button);
+        Button saveButton = view.findViewById(R.id.save_button);
+        SeekBar circleSizeSeekBar = view.findViewById(R.id.circle_size_seekbar);
+
+        redButton.setOnClickListener(v -> mDrawingSurface.setPaintColor(Color.RED));
+        yellowButton.setOnClickListener(v -> mDrawingSurface.setPaintColor(Color.YELLOW));
+        blueButton.setOnClickListener(v -> mDrawingSurface.setPaintColor(Color.BLUE));
+        greenButton.setOnClickListener(v -> mDrawingSurface.setPaintColor(Color.GREEN));
+        clearButton.setOnClickListener(v -> mDrawingSurface.clear());
+        saveButton.setOnClickListener(v -> saveDrawing());
+
+        circleSizeSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                // Set circle size based on seekbar progress
+                float newSize = progress + 10; // Ensure minimum size of 10
+                mDrawingSurface.setCircleSize(newSize);
             }
 
-            db_connection = session.query(DBProxyConnection).filter_by(id=api_connection.id).first()
-            if db_connection is None:
-                db_connection = DBProxyConnection(**connection_data)
-                session.add(db_connection)
-            else:
-                update_connection(db_connection.id, connection_data)
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+                // Do nothing
+            }
 
-        # Mark connections as deleted if not found in the API data
-        session.query(DBProxyConnection).filter(
-            DBProxyConnection.proxy_id == db_proxy.id,
-            DBProxyConnection.id.notin_(api_connection_ids)
-        ).update({'deleted': True})
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                // Do nothing
+            }
+        });
 
-        session.commit()
+        return view;
+    }
+
+    private void saveDrawing() {
+        Bitmap bitmap = mDrawingSurface.getBitmap();
+        // Save the bitmap to a file or database
+        // For this example, we'll simply add it to a static list
+        SavedDrawingsFragment.addDrawing(bitmap);
+
+        // Show saved drawings fragment
+        ((MainActivity) getActivity()).showSavedDrawings();
+    }
+}
+
+activity_main.xml:
+
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity">
+
+    <FrameLayout
+        android:id="@+id/fragment_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+</RelativeLayout>
+
+
+fragment_drawing.xml:
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity">
+
+    <FrameLayout
+        android:id="@+id/fragment_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+</RelativeLayout>
 
 
 
-but how than can i check json data in dbeaver for example ? wouldn't it be easier to save connection data in columns ? Short answer
+fragment_saved_drawings.xml:
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".SavedDrawingsFragment">
 
-i want to leave columns without json. how to modify iproyxservice.py and db_models.py ? do i need user_id in connectionHistory if user changes ?
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recycler_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+</RelativeLayout>
+
+item_drawing.xml:
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <ImageView
+        android:id="@+id/drawing_image"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scaleType="fitCenter" />
+</LinearLayout>
+
+
+
+logics of app that should be :
+1. user draw image
+2. user save image and set name for image
+3. image is saving by downloading to phone storage
+4. image are adding to menu of images (do like senior dev would do)
+5. user is able to delete or modify image 
+
