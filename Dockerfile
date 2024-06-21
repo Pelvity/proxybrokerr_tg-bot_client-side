@@ -14,7 +14,7 @@ RUN apk add --no-cache \
 WORKDIR /usr/src/app
 
 # Copy the current directory contents into the container
-COPY . /usr/src/app
+COPY . .
 
 # Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
