@@ -1,3 +1,5 @@
+import logging
+logging.info("bot_setup.py")
 from aiogram import Bot, Dispatcher
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher.middlewares import LifetimeControllerMiddleware
