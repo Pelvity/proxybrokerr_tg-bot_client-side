@@ -1,5 +1,5 @@
 # Start from Python 3.10 base image
-FROM python:3.10-slim-buster
+FROM python:3.11
 
 # Install the necessary tools and libraries, curl
 RUN apt-get update && apt-get install -y \
