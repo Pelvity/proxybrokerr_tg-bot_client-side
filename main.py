@@ -1,4 +1,5 @@
 import logging
+logging.info("Main.py")
 from aiogram import executor
 from src.bot.config import *
 from src.bot.bot_setup import *
