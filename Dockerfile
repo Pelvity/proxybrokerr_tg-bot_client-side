@@ -1,10 +1,13 @@
-# Start from Python 3.10 base image
-FROM python:3.11
+# Start from Python 3.10 alpine base image
+FROM python:3.10-alpine
 
-# Install the necessary tools and libraries, curl
-RUN apt-get update && apt-get install -y \
+# Install the necessary build tools and libraries
+RUN apk add --no-cache \
+    gcc \
+    musl-dev \
+    libffi-dev \
+    openssl-dev \
     wget \
-    unzip \
     curl
 
 # Set the working directory in the container
