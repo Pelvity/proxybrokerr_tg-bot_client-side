@@ -11,7 +11,7 @@ RUN apk add --no-cache \
     curl
 
 # Set the working directory in the container
-WORKDIR /usr/src/app
+WORKDIR /app
 
 # Copy the current directory contents into the container
 COPY . .
