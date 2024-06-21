@@ -71,16 +71,18 @@ async def handle_connection_callback(callback_query: types.CallbackQuery):
         
     if connection:
         detail_text = (
-            f"`\n"
-            f"{connection.login}\n\n"
-            f"{connection.host}:{connection.port}:{connection.login}:{connection.password}\n"
-            f"Host: {connection.host}\n"
-            f"Port: {connection.port}\n"
-            f"Login: {connection.login}\n"
-            f"Password: {connection.password}\n"
-            f"Expiration Date: {connection.expiration_date.strftime('%d/%m/%Y')}\n"
-            f"Days Left: {(connection.expiration_date - datetime.now()).days} days\n"
-            f"`"
+            f"\n"
+            f"Login: `{connection.login}`\n\n"
+            f"Connection String: `{connection.connection_type}://{connection.host}:{connection.port}:{connection.login}:{connection.password}`\n"
+            f"\n"
+            f"Details:\n"
+            f"Host: `{connection.host}`\n"
+            f"Port: `{connection.port}`\n"
+            f"Login: `{connection.login}`\n"
+            f"Password: `{connection.password}`\n"
+            f"Expiration Date: `{connection.expiration_date.strftime('%d/%m/%Y')}`\n"
+            f"Days Left: `{(connection.expiration_date - datetime.now()).days} days`\n"
+
         )
         await bot.send_message(chat_id=callback_query.message.chat.id, text=detail_text, parse_mode='Markdown')
     else:
