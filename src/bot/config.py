@@ -39,23 +39,30 @@ PM_BINANCE_PAYID = os.environ.get("PM_BINANCE_PAYID")
 PM_PRIVATBANK = os.environ.get("PM_PRIVATBANK")
 PM_PEKAOBANK = os.environ.get("PM_PEKAOBANK")
 
-### Database ###
-SECRET_NAME = os.environ.get("SECRET_NAME")
-REGION_NAME = os.environ.get("REGION_NAME")
+# Load environment variables
 DATABASE_TYPE = os.environ.get("DATABASE_TYPE")
 DATABASE_NAME = os.environ.get("DATABASE_NAME")
 DATABASE_USERNAME = os.environ.get("DATABASE_USERNAME")
 DATABASE_PASSWORD = os.environ.get("DATABASE_PASSWORD")
 DATABASE_HOST = os.environ.get("DATABASE_HOST")
 
-#AZURE_SQL_CONNECTIONSTRING = f'Driver={{ODBC Driver 18 for SQL Server}};Server=tcp:{DATABASE_HOST},1433;Database={DATABASE_NAME};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;UID={DATABASE_USERNAME};PWD={DATABASE_PASSWORD}'
-
-AZURE_SQL_CONNECTIONSTRING = URL.create(
-    "mssql+pymssql",
-    username=os.environ.get("DATABASE_USERNAME"),
-    password=os.environ.get("DATABASE_PASSWORD"),
-    host=os.environ.get("DATABASE_HOST"),
-    port=1433,
-    database=os.environ.get("DATABASE_NAME"),
-    #query={"driver": "ODBC Driver 18 for SQL Server"}, # Or the driver you are using
-)
+if DATABASE_TYPE == "azure":
+    SQL_CONNECTIONSTRING = URL.create(
+        "mssql+pymssql",
+        username=DATABASE_USERNAME,
+        password=DATABASE_PASSWORD,
+        host=DATABASE_HOST,
+        port=1433,
+        database=DATABASE_NAME,
+    )
+elif DATABASE_TYPE == "aws":
+    SQL_CONNECTIONSTRING = URL.create(
+        "mysql+pymysql",
+        username=DATABASE_USERNAME,
+        password=DATABASE_PASSWORD,
+        host=DATABASE_HOST,
+        port=3306,
+        database=DATABASE_NAME,
+    )
+else:
+    raise ValueError("Unsupported DATABASE_TYPE. Please set it to either 'azure' or 'aws'.")
