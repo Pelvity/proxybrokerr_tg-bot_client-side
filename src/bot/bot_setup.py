@@ -1,5 +1,8 @@
 import logging
-logging.info("bot_setup.py")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+logger.info("bot_setup.py")
 from aiogram import Bot, Dispatcher
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher.middlewares import LifetimeControllerMiddleware
@@ -15,6 +18,7 @@ lifetime_controller_middleware = LifetimeControllerMiddleware()
 dp.middleware.setup(lifetime_controller_middleware)
 
 # Initialize the database based on the DATABASE_TYPE
+logger.info(f"Initializing database for {DATABASE_TYPE}")
 if DATABASE_TYPE == "azure":
     database = AzureSQLService()
 elif DATABASE_TYPE == "aws":
