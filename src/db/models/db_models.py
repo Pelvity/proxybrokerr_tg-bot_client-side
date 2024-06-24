@@ -1,9 +1,12 @@
 from sqlalchemy import CheckConstraint, Column, Integer, String, Boolean, ForeignKey, DECIMAL, BigInteger, ForeignKeyConstraint, Text, Enum as SQLAEnum
 from sqlalchemy.dialects.mssql import SMALLDATETIME
+from sqlalchemy.dialects.mysql import DATETIME as MYSQLDATETIME
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from enum import Enum
-from src.db.azure_db import Base
+
+from src.db.azure_db import Base as AzureBase
+from src.db.aws_db import Base as AWSBase
 
 def current_datetime_utc():
     return datetime.now(timezone.utc).replace(microsecond=0)
@@ -16,13 +19,6 @@ class ChangeType(Enum):
     CONNECTION_DATA_CHANGE = 'connection_data_change'
     USER_CONNECTION_CHANGE = 'user_connection_change'
     DEVICE_CONNECTION_CHANGE = 'device_connection_change'
-    
-class UserConnectionChangeType(Enum):
-    ASSIGNED = 'assigned'
-    UNASSIGNED = 'unassigned'
-    REASSIGNED = 'reassigned'
-
-class ChangeType(Enum):
     NAME = 'name'
     DESCRIPTION = 'description'
     HOST = 'host'
@@ -33,11 +29,26 @@ class ChangeType(Enum):
     ACTIVE = 'active'
     OTHER = 'other'  # For any other changes not covered by the above types
 
+class UserConnectionChangeType(Enum):
+    ASSIGNED = 'assigned'
+    UNASSIGNED = 'unassigned'
+    REASSIGNED = 'reassigned'
+
 class DeviceProxyChangeType(Enum):
     PHONE_CHANGE = 'phone_change'
     SIM_CARD_CHANGE = 'sim_card_change'
 
-# Define all the necessary ORM models first
+# Choose the appropriate base class based on the database type
+from src.bot.config import DATABASE_TYPE
+
+if DATABASE_TYPE == 'azure':
+    Base = AzureBase
+    DateTimeType = SMALLDATETIME
+elif DATABASE_TYPE == 'aws':
+    Base = AWSBase
+    DateTimeType = MYSQLDATETIME
+else:
+    raise ValueError("Unsupported DATABASE_TYPE. Please set it to either 'azure' or 'aws'.")
 
 class User(Base):
     __tablename__ = 'Users'
@@ -48,14 +59,10 @@ class User(Base):
     user_type = Column(String(255), default=UserType.TELEGRAM.value)
     telegram_user_id = Column(BigInteger, unique=False, nullable=True)
     telegram_chat_id = Column(BigInteger, unique=False, nullable=True)
-    joined_at = Column(SMALLDATETIME, nullable=True, default=current_datetime_utc)
-    last_message_at = Column(SMALLDATETIME, nullable=True, default=current_datetime_utc)
+    joined_at = Column(DateTimeType, nullable=True, default=current_datetime_utc)
+    last_message_at = Column(DateTimeType, nullable=True, default=current_datetime_utc)
     is_active = Column(Boolean, default=True)
-
-    # Identity Confirmation (Phone)
     phone_number_confirmed = Column(Boolean, default=False) 
-
-    # Identity Confirmation (Bank Transfer)
     bank_transfer_confirmed = Column(Boolean, default=False)
 
     payments = relationship("Payment", backref="user_payments")
@@ -66,14 +73,13 @@ class User(Base):
     connection_changes = relationship("ConnectionDataChange", back_populates="user")
     history_entries = relationship("UserHistory", back_populates="user")
 
-
 class Phone(Base):
     __tablename__ = 'Phones' 
     id = Column(Integer, primary_key=True, autoincrement=True)
     model = Column(String(255), nullable=False)
     imei = Column(String(255), unique=True, nullable=False)
     description = Column(String(255))
-    date_of_buying = Column(SMALLDATETIME, default=current_datetime_utc)
+    date_of_buying = Column(DateTimeType, default=current_datetime_utc)
     active = Column(Boolean, default=True)
     sim_card_id = Column(Integer, ForeignKey('SimCards.id'), nullable=True)
 
@@ -94,8 +100,8 @@ class UserPhoneNumber(Base):
     user_id = Column(Integer, ForeignKey('Users.id'))
     phone_number = Column(String(255))
     confirmed = Column(Boolean, default=False) 
-    created_at = Column(SMALLDATETIME, default=current_datetime_utc)
-    updated_at = Column(SMALLDATETIME, default=current_datetime_utc)
+    created_at = Column(DateTimeType, default=current_datetime_utc)
+    updated_at = Column(DateTimeType, default=current_datetime_utc)
 
 class DBProxy(Base):
     __tablename__ = 'Proxies'
@@ -103,12 +109,12 @@ class DBProxy(Base):
     phone_id = Column(Integer, ForeignKey('Phones.id'), nullable=True)
     name = Column(String(255))
     tariff_plan = Column(String(255))
-    tariff_expiration_date = Column(SMALLDATETIME, default=datetime(2000, 1, 1))
+    tariff_expiration_date = Column(DateTimeType, default=datetime(2000, 1, 1))
     device_model = Column(String(255))
     active = Column(Boolean)
     service_name = Column(String(255))
-    created_at = Column(SMALLDATETIME, default=current_datetime_utc)
-    updated_at = Column(SMALLDATETIME, default=current_datetime_utc)
+    created_at = Column(DateTimeType, default=current_datetime_utc)
+    updated_at = Column(DateTimeType, default=current_datetime_utc)
     service_account_login = Column(String(255), nullable=True)
 
     phone = relationship("Phone", back_populates="proxies")
@@ -120,9 +126,9 @@ class DBProxyConnection(Base):
     id = Column(String(255), primary_key=True)  # Connection ID (from the proxy service)
     proxy_id = Column(String(255), ForeignKey('Proxies.id'), nullable=True)
     user_id = Column(Integer, ForeignKey('Users.id'), nullable=True)
-    expiration_date = Column(SMALLDATETIME, default=current_datetime_utc)
-    created_datetime = Column(SMALLDATETIME, default=current_datetime_utc)
-    updated_datetime = Column(SMALLDATETIME, default=current_datetime_utc)
+    expiration_date = Column(DateTimeType, default=current_datetime_utc)
+    created_datetime = Column(DateTimeType, default=current_datetime_utc)
+    updated_datetime = Column(DateTimeType, default=current_datetime_utc)
     name = Column(String(255))
     description = Column(String(255))
     host = Column(String(255))
@@ -140,18 +146,17 @@ class DBProxyConnection(Base):
     changes = relationship("ConnectionDataChange", back_populates="connection")
     device_proxy_change_histories = relationship("DeviceProxyChangeHistory", back_populates="connection")
 
-### PAYMENT
 class Payment(Base):
     __tablename__ = 'Payments'
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey('Users.id'))
     connection_id = Column(String(255), ForeignKey('ProxyConnections.id'))
     amount = Column(DECIMAL(10, 2))
-    payment_date = Column(SMALLDATETIME, default=current_datetime_utc)
+    payment_date = Column(DateTimeType, default=current_datetime_utc)
     status = Column(String(255), default='pending')
     payment_method = Column(String(255))  
-    start_date = Column(SMALLDATETIME, nullable=True, default=current_datetime_utc)
-    end_date = Column(SMALLDATETIME, nullable=True, default=current_datetime_utc)
+    start_date = Column(DateTimeType, nullable=True, default=current_datetime_utc)
+    end_date = Column(DateTimeType, nullable=True, default=current_datetime_utc)
 
     connection = relationship("DBProxyConnection", back_populates="payments")
 
@@ -172,12 +177,11 @@ class BankTransferPayment(Base):
 
     payment = relationship("Payment", backref="bank_transfer_payment")
 
-### HISTORY
 class UserHistory(Base):
     __tablename__ = 'UserHistory'
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey('Users.id'), nullable=False)
-    timestamp = Column(SMALLDATETIME, default=current_datetime_utc)
+    timestamp = Column(DateTimeType, default=current_datetime_utc)
     action = Column(String(50))  # Action/Event (e.g., 'username_changed', 'profile_updated')
     details = Column(Text, nullable=True)  # JSON details for more information
 
@@ -190,71 +194,34 @@ class UserConnectionChange(Base):
     old_user_id = Column(Integer, ForeignKey('Users.id'), nullable=True)
     new_user_id = Column(Integer, ForeignKey('Users.id'), nullable=True)
     change_type = Column(String(50))  # e.g., 'assigned', 'unassigned'
-    change_date = Column(SMALLDATETIME, default=current_datetime_utc)
+    change_date = Column(DateTimeType, default=current_datetime_utc)
 
     connection = relationship("DBProxyConnection", back_populates="user_change_histories")
     old_user = relationship("User", foreign_keys=[old_user_id], back_populates="old_connection_changes")
     new_user = relationship("User", foreign_keys=[new_user_id], back_populates="new_connection_changes")
 
 class ConnectionDataChange(Base):
-    __tablename__ = 'ConnectionDataChanges'
+    __tablename__ = 'ConnectionDataChange'
     id = Column(Integer, primary_key=True, autoincrement=True)
     connection_id = Column(String(255), ForeignKey('ProxyConnections.id'), nullable=False)
-    change_by_id = Column(Integer, ForeignKey('Users.id'))  # User who made the change
-    change_type = Column(SQLAEnum(ChangeType), nullable=False)
+    user_id = Column(Integer, ForeignKey('Users.id'), nullable=False)
+    change_type = Column(String(255), nullable=False)
     old_value = Column(String(255), nullable=True)
     new_value = Column(String(255), nullable=True)
-    change_reason = Column(Text, nullable=True)
-    change_date = Column(SMALLDATETIME, default=current_datetime_utc)
+    change_date = Column(DateTimeType, default=current_datetime_utc)
 
     connection = relationship("DBProxyConnection", back_populates="changes")
     user = relationship("User", back_populates="connection_changes")
 
 class DeviceProxyChangeHistory(Base):
-    __tablename__ = 'DeviceProxyChangeHistories'
+    __tablename__ = 'DeviceProxyChangeHistory'
     id = Column(Integer, primary_key=True, autoincrement=True)
-    change_type = Column(String(255), nullable=False)  # Enum value to indicate type of change
     proxy_id = Column(String(255), ForeignKey('Proxies.id'), nullable=False)
-    connection_id = Column(String(255), ForeignKey('ProxyConnections.id'), nullable=True)
-    old_phone_id = Column(Integer, ForeignKey('Phones.id'), nullable=True)
-    new_phone_id = Column(Integer, ForeignKey('Phones.id'), nullable=True)
-    old_sim_card_id = Column(Integer, ForeignKey('SimCards.id'), nullable=True)
-    new_sim_card_id = Column(Integer, ForeignKey('SimCards.id'), nullable=True)
-    change_reason = Column(Text, nullable=True)
-    change_date = Column(SMALLDATETIME, default=current_datetime_utc)
+    connection_id = Column(String(255), ForeignKey('ProxyConnections.id'), nullable=False)
+    change_type = Column(String(255), nullable=False)
+    old_value = Column(String(255), nullable=True)
+    new_value = Column(String(255), nullable=True)
+    change_date = Column(DateTimeType, default=current_datetime_utc)
 
     proxy = relationship("DBProxy", back_populates="device_proxy_change_histories")
     connection = relationship("DBProxyConnection", back_populates="device_proxy_change_histories")
-    old_phone = relationship("Phone", foreign_keys=[old_phone_id])
-    new_phone = relationship("Phone", foreign_keys=[new_phone_id])
-    old_sim_card = relationship("SimCard", foreign_keys=[old_sim_card_id])
-    new_sim_card = relationship("SimCard", foreign_keys=[new_sim_card_id])
-
-    __table_args__ = (
-        CheckConstraint(
-            f"change_type IN ('{DeviceProxyChangeType.PHONE_CHANGE.value}', '{DeviceProxyChangeType.SIM_CARD_CHANGE.value}')",
-            name='check_device_proxy_change_type'
-        ),
-    )
-
-# Ensure the commented-out class is well defined before being used in relationships
-
-# class ConnectionHistory(Base):
-#     __tablename__ = 'ConnectionHistory'
-#     id = Column(Integer, primary_key=True, autoincrement=True)
-#     connection_id = Column(String(255), ForeignKey('ProxyConnections.id'), nullable=False)
-#     user_id = Column(Integer, ForeignKey('Users.id'), nullable=True)
-#     name = Column(String(255))
-#     description = Column(String(255))
-#     host = Column(String(255))
-#     port = Column(Integer)
-#     login = Column(String(255))
-#     password = Column(String(255))
-#     connection_type = Column(String(255))
-#     active = Column(Boolean, default=True)
-#     start_datetime = Column(SMALLDATETIME, default=current_datetime_utc)
-#     end_datetime = Column(SMALLDATETIME, nullable=True)
-
-#     proxy_connection = relationship("DBProxyConnection", back_populates="histories")
-#     user = relationship("User", back_populates="connection_histories")
-
