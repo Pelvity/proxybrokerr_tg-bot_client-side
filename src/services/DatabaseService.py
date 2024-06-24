@@ -3,7 +3,7 @@ import pymssql
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.bot.config import DATABASE_HOST, DATABASE_NAME, DATABASE_PASSWORD, DATABASE_USERNAME, DATABASE_TYPE, AZURE_SQL_CONNECTIONSTRING
+from src.bot.config import DATABASE_HOST, DATABASE_NAME, DATABASE_PASSWORD, DATABASE_USERNAME, DATABASE_TYPE, SQL_CONNECTIONSTRING
 
 class DatabaseService(ABC):
     @abstractmethod
@@ -55,7 +55,7 @@ def create_database_service(db_type, connection_string=None):
         #return MySQLService(DATABASE_NAME, DATABASE_HOST, DATABASE_USERNAME, DATABASE_PASSWORD)
         pass
     elif db_type == 'azure':
-        return AzureSQLService(connection_string or AZURE_SQL_CONNECTIONSTRING)
+        return AzureSQLService(connection_string or SQL_CONNECTIONSTRING)
     else:
         raise ValueError(f"Unsupported database type: {db_type}")
 

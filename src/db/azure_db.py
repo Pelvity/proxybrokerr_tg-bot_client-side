@@ -1,10 +1,10 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-from src.bot.config import AZURE_SQL_CONNECTIONSTRING
+from src.bot.config import SQL_CONNECTIONSTRING
 
 # Create the SQLAlchemy engine using the connection string
-engine = create_engine(AZURE_SQL_CONNECTIONSTRING) 
+engine = create_engine(SQL_CONNECTIONSTRING) 
 
 # Create a session factory
 Session = sessionmaker(bind=engine)
@@ -13,7 +13,7 @@ Session = sessionmaker(bind=engine)
 Base = declarative_base() 
 
 class AzureSQLService:
-    def __init__(self, connection_string=AZURE_SQL_CONNECTIONSTRING):
+    def __init__(self, connection_string=SQL_CONNECTIONSTRING):
         self.engine = create_engine(connection_string)
         self.Session = sessionmaker(bind=self.engine)
 
