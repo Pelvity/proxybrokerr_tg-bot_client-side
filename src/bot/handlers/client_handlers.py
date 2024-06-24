@@ -12,7 +12,7 @@ from src.db.repositories.proxy_repositories import ProxyRepository
 from src.utils.keyboards import client_main_menu, generate_connection_selection_keyboard
 from src.utils.proxy_utils import get_user_proxies
 from src.db.repositories.user_repositories import UserRepository
-from src.bot.config import SECRET_NAME, REGION_NAME, DATABASE_NAME, DATABASE_HOST, ADMIN_CHAT_ID
+from src.bot.config import ADMIN_CHAT_ID
 from src.utils.helpers import forward_message_to_admin
 from src.bot.handlers.payment_handlers import *
 from src.utils.payment_utils import *
