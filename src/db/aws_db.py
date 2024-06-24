@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 # Create the SQLAlchemy engine using the connection string
 logger.info("Creating SQLAlchemy engine.")
-logging.info("SQL_CONNECTIONSTRING", SQL_CONNECTIONSTRING)
+#logging.info("SQL_CONNECTIONSTRING", SQL_CONNECTIONSTRING)
 engine = create_engine(SQL_CONNECTIONSTRING)
 
 # Create a session factory
