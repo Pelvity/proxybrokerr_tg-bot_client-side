@@ -41,6 +41,8 @@ class ForwardToAdminMiddleware(BaseMiddleware):
                 header_text = f"{client_name} (Chat ID: {client_chat_id})"
 
             forwarded_message = None
+            
+            logging.info("message.content_type: ", message.content_type)
 
             if message.content_type == ContentTypes.TEXT:
                 forwarded_message = await bot.send_message(chat_id=ADMIN_CHAT_ID, text=f"{header_text}\n{message.text}")
