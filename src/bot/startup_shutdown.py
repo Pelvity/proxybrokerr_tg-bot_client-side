@@ -2,6 +2,7 @@ import logging
 from src.bot.config import ADMIN_CHAT_ID, WEBHOOK_URL
 from src.bot.bot_setup import bot, dp
 from aiogram import Dispatcher
+from src.middlewares.forward_to_admin_middleware import ForwardToAdminMiddleware
 from src.utils.background_tasks import sync_proxy_connections
 import asyncio
 
@@ -15,4 +16,8 @@ async def on_startup(dp):
     asyncio.create_task(sync_proxy_connections())
 
 async def on_shutdown(dp):
+    # Close the ForwardToAdminMiddleware
+    for middleware in dp.middleware.applications:
+        if isinstance(middleware, ForwardToAdminMiddleware):
+            await middleware.close()
     await bot.send_message(chat_id=ADMIN_CHAT_ID, text='Bot has been stopped')

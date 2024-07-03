@@ -1,8 +1,13 @@
+from datetime import datetime
 import logging
 from aiogram.dispatcher.middlewares import BaseMiddleware
 from aiogram.types import Message, ContentTypes
 from src.bot.config import ADMIN_CHAT_ID
 from aiogram import Bot
+from src.db.repositories.user_repositories import UserRepository
+from sqlalchemy.orm import Session
+from src.db.database import get_db_session
+import pytz
 
 # Dictionary to map forwarded admin messages to original user messages
 forwarded_message_mapping = {}
@@ -10,8 +15,19 @@ forwarded_message_mapping = {}
 class ForwardToAdminMiddleware(BaseMiddleware):
     def __init__(self):
         super(ForwardToAdminMiddleware, self).__init__()
+        self.db_session = get_db_session()
+        self.user_repository = UserRepository(self.db_session)
 
     async def on_post_process_message(self, message: Message, results, data: dict):
+        # Update last_message_at for the user
+        if message.from_user and message.chat.id != ADMIN_CHAT_ID:
+            try:
+                user = self.user_repository.get_user_by_telegram_user_id(message.from_user.id)
+                if user:
+                    user.last_message_at = datetime.now(pytz.utc)
+                    self.db_session.commit()
+            except Exception as e:
+                logging.exception(f"Error updating last_message_at: {e}")
         # Skip messages that are replies from the admin
         if message.chat.id == ADMIN_CHAT_ID and message.reply_to_message:
             return
@@ -63,3 +79,7 @@ class ForwardToAdminMiddleware(BaseMiddleware):
 
             except Exception as e:
                 logging.exception(f"Error forwarding message to admin: {e}")
+                
+    async def close(self):
+        if self.db_session:
+            self.db_session.close()
