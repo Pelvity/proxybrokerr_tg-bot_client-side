@@ -1,6 +1,6 @@
 import logging
 from aiogram.dispatcher.middlewares import BaseMiddleware
-from aiogram.types import Message, ContentTypes
+from aiogram import types
 from src.bot.config import ADMIN_CHAT_ID
 from aiogram import Bot
 from src.bot.bot_setup import database
@@ -15,7 +15,7 @@ class ForwardToAdminMiddleware(BaseMiddleware):
     def __init__(self):
         super(ForwardToAdminMiddleware, self).__init__()
 
-    async def on_post_process_message(self, message: Message, results, data: dict):
+    async def on_post_process_message(self, message: types.Message, results, data: dict):
         bot = Bot.get_current()
         try:
             # Update last_message_at for the user
@@ -41,32 +41,30 @@ class ForwardToAdminMiddleware(BaseMiddleware):
                 header_text = f"{client_name} (Chat ID: {client_chat_id})"
 
             forwarded_message = None
-            
-            logging.info("message.content_type: ", message.content_type)
 
-            if message.content_type == ContentTypes.TEXT:
+            if message.text:
                 forwarded_message = await bot.send_message(chat_id=ADMIN_CHAT_ID, text=f"{header_text}\n{message.text}")
-            elif message.content_type == ContentTypes.PHOTO:
+            elif message.photo:
                 photo = message.photo[-1]
                 forwarded_message = await bot.send_photo(chat_id=ADMIN_CHAT_ID, photo=photo.file_id, caption=header_text)
-            elif message.content_type == ContentTypes.DOCUMENT:
+            elif message.document:
                 forwarded_message = await bot.send_document(chat_id=ADMIN_CHAT_ID, document=message.document.file_id, caption=header_text)
-            elif message.content_type == ContentTypes.STICKER:
+            elif message.sticker:
                 forwarded_message = await bot.send_sticker(chat_id=ADMIN_CHAT_ID, sticker=message.sticker.file_id)
                 await bot.send_message(chat_id=ADMIN_CHAT_ID, text=header_text)
-            elif message.content_type == ContentTypes.AUDIO:
+            elif message.audio:
                 forwarded_message = await bot.send_audio(chat_id=ADMIN_CHAT_ID, audio=message.audio.file_id, caption=header_text)
-            elif message.content_type == ContentTypes.VIDEO:
+            elif message.video:
                 forwarded_message = await bot.send_video(chat_id=ADMIN_CHAT_ID, video=message.video.file_id, caption=header_text)
-            elif message.content_type == ContentTypes.VOICE:
+            elif message.voice:
                 forwarded_message = await bot.send_voice(chat_id=ADMIN_CHAT_ID, voice=message.voice.file_id, caption=header_text)
-            elif message.content_type == ContentTypes.CONTACT:
+            elif message.contact:
                 forwarded_message = await bot.send_contact(chat_id=ADMIN_CHAT_ID, phone_number=message.contact.phone_number, first_name=message.contact.first_name, last_name=message.contact.last_name)
                 await bot.send_message(chat_id=ADMIN_CHAT_ID, text=header_text)
-            elif message.content_type == ContentTypes.LOCATION:
+            elif message.location:
                 forwarded_message = await bot.send_location(chat_id=ADMIN_CHAT_ID, latitude=message.location.latitude, longitude=message.location.longitude)
                 await bot.send_message(chat_id=ADMIN_CHAT_ID, text=header_text)
-            elif message.content_type == ContentTypes.VENUE:
+            elif message.venue:
                 forwarded_message = await bot.send_venue(chat_id=ADMIN_CHAT_ID, latitude=message.venue.location.latitude, longitude=message.venue.location.longitude, title=message.venue.title, address=message.venue.address)
                 await bot.send_message(chat_id=ADMIN_CHAT_ID, text=header_text)
             else:
