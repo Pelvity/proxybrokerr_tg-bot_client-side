@@ -34,7 +34,7 @@ async def admin_my_clients_command(message: types.Message):
         keyboard = types.InlineKeyboardMarkup()
         for client in clients:
             keyboard.add(types.InlineKeyboardButton(
-                text=f"(@{client.username})",
+                text=f"(@{client.username}) {client.first_name} {client.last_name}",
                 callback_data=f"client_{client.id}"
             ))
         await message.reply("Select a client:", reply_markup=keyboard)
