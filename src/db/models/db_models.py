@@ -64,6 +64,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     phone_number_confirmed = Column(Boolean, default=False) 
     bank_transfer_confirmed = Column(Boolean, default=False)
+    is_admin = Column(Boolean, default=False)  
 
     payments = relationship("Payment", backref="user_payments")
     phone_numbers = relationship("UserPhoneNumber", backref="user")
@@ -120,18 +121,28 @@ class DBProxy(Base):
     phone = relationship("Phone", back_populates="proxies")
     connections = relationship("DBProxyConnection", back_populates="proxy")
     device_proxy_change_histories = relationship("DeviceProxyChangeHistory", back_populates="proxy")
+    
+class DBHost(Base):
+    __tablename__ = 'Hosts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    host_ip = Column(String(255), nullable=False, unique=True)
+    country_code = Column(String(10), nullable=False)
+    country_name = Column(String(255), nullable=False)
+    description = Column(String(255), nullable=True)
+
+    connections = relationship('DBProxyConnection', back_populates='host')
 
 class DBProxyConnection(Base):
     __tablename__ = 'ProxyConnections'
     id = Column(String(255), primary_key=True)  # Connection ID (from the proxy service)
     proxy_id = Column(String(255), ForeignKey('Proxies.id'), nullable=True)
     user_id = Column(Integer, ForeignKey('Users.id'), nullable=True)
+    host_id = Column(Integer, ForeignKey('Hosts.id'), nullable=True)  # Foreign key to Host table
     expiration_date = Column(DateTimeType, default=current_datetime_utc)
     created_datetime = Column(DateTimeType, default=current_datetime_utc)
     updated_datetime = Column(DateTimeType, default=current_datetime_utc)
     name = Column(String(255))
     description = Column(String(255))
-    host = Column(String(255))
     port = Column(Integer)
     login = Column(String(255))
     password = Column(String(255))
@@ -145,6 +156,7 @@ class DBProxyConnection(Base):
     payments = relationship("Payment", back_populates="connection")
     changes = relationship("ConnectionDataChange", back_populates="connection")
     device_proxy_change_histories = relationship("DeviceProxyChangeHistory", back_populates="connection")
+    host = relationship("Host", back_populates="connections")  # Relationship to Host
 
 class Payment(Base):
     __tablename__ = 'Payments'
