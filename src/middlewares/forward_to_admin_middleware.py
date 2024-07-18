@@ -1,8 +1,7 @@
 import logging
 from aiogram.dispatcher.middlewares import BaseMiddleware
-from aiogram import types
+from aiogram import types, Bot, Dispatcher
 from src.bot.config import ADMIN_CHAT_ID
-from aiogram import Bot
 from src.bot.bot_setup import database
 from src.db.repositories.user_repositories import UserRepository
 from datetime import datetime
@@ -16,6 +15,9 @@ class ForwardToAdminMiddleware(BaseMiddleware):
         super(ForwardToAdminMiddleware, self).__init__()
 
     async def on_post_process_message(self, message: types.Message, results, data: dict):
+        await self.forward_message_to_admin(message)
+
+    async def forward_message_to_admin(self, message: types.Message):
         bot = Bot.get_current()
         try:
             # Update last_message_at for the user
@@ -76,3 +78,22 @@ class ForwardToAdminMiddleware(BaseMiddleware):
 
         except Exception as e:
             logging.exception(f"Error in ForwardToAdminMiddleware: {e}")
+
+# async def check_for_missed_updates():
+#     bot = Bot.get_current()
+#     dp = Dispatcher(bot)
+
+#     try:
+#         updates = await bot.get_updates()
+#         for update in updates:
+#             if update.message:
+#                 # Manually process each message as if it was just received
+#                 message = update.message
+#                 await dp.process_update(update)
+#                 forward_middleware = dp.middleware._middlewares[0]  # Get the instance of ForwardToAdminMiddleware
+#                 if isinstance(forward_middleware, ForwardToAdminMiddleware):
+#                     await forward_middleware.forward_message_to_admin(message)
+#             # Acknowledge the update to remove it from the pending updates queue
+#             await bot.get_updates(offset=update.update_id + 1)
+#     except Exception as e:
+#         logging.exception(f"Error checking for missed updates: {e}")

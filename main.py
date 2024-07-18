@@ -9,6 +9,7 @@ from src.bot.handlers.common_handlers import *
 from src.utils.logging_utils import create_custom_logger
 from src.middlewares.logging_middleware import LoggingMiddleware
 from src.middlewares.forward_to_admin_middleware import ForwardToAdminMiddleware
+from src.middlewares.read_status_middleware import ReadStatusMiddleware
 
 # Create and configure the custom logger
 custom_logger = create_custom_logger()
