@@ -7,3 +7,4 @@ peewee
 sqlalchemy
 pymssql
 pandas
+paramiko
