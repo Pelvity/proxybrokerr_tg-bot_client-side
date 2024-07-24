@@ -45,6 +45,14 @@ DATABASE_NAME = os.environ.get("DATABASE_NAME")
 DATABASE_USERNAME = os.environ.get("DATABASE_USERNAME")
 DATABASE_PASSWORD = os.environ.get("DATABASE_PASSWORD")
 DATABASE_HOST = os.environ.get("DATABASE_HOST")
+DB_PORT = os.environ.get("DB_PORT")
+
+# ssh
+SSH_HOST = os.getenv('SSH_HOST')
+SSH_PORT = int(os.getenv('SSH_PORT', 22))
+SSH_USER = os.getenv('SSH_USER')
+SSH_PKEY = os.getenv('SSH_PKEY')
+USE_SSH = os.environ.get('USE_SSH').lower() == 'true'
 
 if DATABASE_TYPE == "azure":
     SQL_CONNECTIONSTRING = URL.create(
@@ -66,3 +74,12 @@ elif DATABASE_TYPE == "aws":
     )
 else:
     raise ValueError("Unsupported DATABASE_TYPE. Please set it to either 'azure' or 'aws'.")
+
+def get_ssh_params():
+    return {
+        'ssh_host': SSH_HOST,
+        'ssh_port': int(SSH_PORT),  # Ensure this is an integer
+        'ssh_username': SSH_USER,
+        'ssh_private_key': SSH_PKEY,
+        'remote_bind_address': (DATABASE_HOST, int(DB_PORT))  # Ensure this is an integer
+    }
