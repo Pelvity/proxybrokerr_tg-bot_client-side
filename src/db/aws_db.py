@@ -28,19 +28,23 @@ class AWSRDSService:
 
     def validate_config(self):
         required_configs = [DATABASE_TYPE, DATABASE_NAME, DATABASE_USERNAME, DATABASE_PASSWORD, DATABASE_HOST, DB_PORT]
-        if USE_SSH == True:
-            required_configs.extend([SSH_HOST, SSH_PORT, SSH_USER, SSH_PKEY])
         
         for config in required_configs:
             if not config:
                 raise ValueError(f"Missing required configuration: {config}")
+
+        if USE_SSH:
+            ssh_configs = [SSH_HOST, SSH_PORT, SSH_USER, SSH_PKEY]
+            for config in ssh_configs:
+                if not config:
+                    raise ValueError(f"SSH is enabled but missing required configuration: {config}")
 
     def connect(self):
         """Establishes a new database connection, using SSH if configured."""
         logger.info("Establishing a new database connection.")
         try:
             self.validate_config()
-            if USE_SSH == True:
+            if USE_SSH:
                 self.engine, self.tunnel = self.get_local_db_connection()
             else:
                 self.engine, _ = self.get_ec2_db_connection()
