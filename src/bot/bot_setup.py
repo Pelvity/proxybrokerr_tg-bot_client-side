@@ -26,7 +26,7 @@ elif DATABASE_TYPE == "aws":
 else:
     raise ValueError("Unsupported DATABASE_TYPE. Please set it to either 'azure' or 'aws'.")
 
-database.create_tables()
+#database.create_tables()
 
 # ... rest of your bot setup (import handlers, etc.) ...
 
