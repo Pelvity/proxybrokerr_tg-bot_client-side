@@ -6,10 +6,11 @@ from src.bot.startup_shutdown import *
 from src.bot.handlers.client_handlers import *
 from src.bot.handlers.admin_handlers import *
 from src.bot.handlers.common_handlers import *
+from src.bot.handlers.callback_handlers import *
 from src.utils.logging_utils import create_custom_logger
 from src.middlewares.logging_middleware import LoggingMiddleware
 from src.middlewares.forward_to_admin_middleware import ForwardToAdminMiddleware
-from src.middlewares.read_status_middleware import ReadStatusMiddleware
+#from src.middlewares.read_status_middleware import ReadStatusMiddleware
 
 # Create and configure the custom logger
 custom_logger = create_custom_logger()
