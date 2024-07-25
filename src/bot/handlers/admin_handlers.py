@@ -2,13 +2,16 @@ import logging
 from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.types import ContentTypes
+from aiogram.dispatcher.filters.state import State, StatesGroup
+from sqlalchemy.exc import SQLAlchemyError
+
 from src.bot.bot_setup import bot, dp, database
 from src.db.models.db_models import User
 from src.bot.config import ADMIN_CHAT_ID
 from src.utils.keyboards import admin_main_menu
-from aiogram.dispatcher.filters.state import State, StatesGroup
 from src.db.repositories.user_repositories import UserRepository
 from src.middlewares.forward_to_admin_middleware import forwarded_message_mapping
+from src.db.aws_db import aws_rds_service
 
 class AdminStates(StatesGroup):
     waiting_for_message = State()
@@ -17,41 +20,37 @@ class AdminStates(StatesGroup):
 async def admin_start_command(message: types.Message):
     await message.reply("Welcome, admin!", reply_markup=admin_main_menu())
 
-# @dp.message_handler(commands=['start'])
-# async def admin_start_command(message: types.Message):
-#     if message.from_user.id == ADMIN_CHAT_ID:
-#         await message.reply("Welcome to ADMIN!", reply_markup=admin_main_menu())
-
 @dp.message_handler(lambda message: message.from_user.id == ADMIN_CHAT_ID and message.text == "👥 My Clients")
 async def admin_my_clients_command(message: types.Message):
-    with database.get_session() as session:
-        user_repository = UserRepository(session) 
-        clients = user_repository.get_all_users()  # Use the repository method
+    try:
+        with aws_rds_service.get_user_repository() as user_repo:
+            clients = user_repo.get_all_users()
 
-    if not clients:
-        await message.reply("No clients found.")
-    else:
-        keyboard = types.InlineKeyboardMarkup()
-        for client in clients:
-            keyboard.add(types.InlineKeyboardButton(
-                text=f"(@{client.username}) {client.first_name} {client.last_name}",
-                callback_data=f"client_{client.id}"
-            ))
-        await message.reply("Select a client:", reply_markup=keyboard)
+        if not clients:
+            await message.reply("No clients found.")
+        else:
+            keyboard = types.InlineKeyboardMarkup()
+            for client in clients:
+                keyboard.add(types.InlineKeyboardButton(
+                    text=f"(@{client.username}) {client.first_name} {client.last_name}",
+                    callback_data=f"client_{client.id}"
+                ))
+            await message.reply("Select a client:", reply_markup=keyboard)
+    except SQLAlchemyError as e:
+        logging.error(f"Database error: {str(e)}")
+        await message.reply("An error occurred while fetching clients.")
 
 @dp.callback_query_handler(lambda query: query.from_user.id == ADMIN_CHAT_ID and query.data.startswith("client_"))
 async def admin_client_selected(query: types.CallbackQuery, state: FSMContext):
     client_id = int(query.data.split("_")[1])
 
-    with database.get_session() as session:
-        user_repository = UserRepository(session)
-        client = user_repository.get_user_by_id(client_id)  # Use repository method
+    with aws_rds_service.get_user_repository() as user_repo:
+        client = user_repo.get_user_by_id(client_id)
 
     if client:
-        await state.update_data(selected_client=client)
+        await state.update_data(selected_client_id=client.id)  # Store only the ID
         await AdminStates.waiting_for_message.set()
 
-        # Create a keyboard with a cancel button
         keyboard = types.InlineKeyboardMarkup()
         keyboard.add(types.InlineKeyboardButton(text="Cancel", callback_data="cancel"))
 
@@ -69,18 +68,21 @@ async def handle_cancel(query: types.CallbackQuery, state: FSMContext):
 @dp.message_handler(lambda message: message.from_user.id == ADMIN_CHAT_ID, state=AdminStates.waiting_for_message)
 async def admin_send_message_to_client(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    client = data.get('selected_client')
-
-    if client:
-        await bot.send_message(chat_id=client.telegram_chat_id, text=message.text)
-        await message.reply(
-            f"Message sent to {client.first_name} {client.last_name} "
-            f"(@{client.username}, Telegram ID: {client.telegram_user_id})."
-        )
-        await state.finish()
+    client_id = data.get('selected_client_id')
+    if client_id:
+        with aws_rds_service.get_user_repository() as user_repo:
+            client = user_repo.get_user_by_id(client_id)
+        if client:
+            await bot.send_message(chat_id=client.telegram_chat_id, text=message.text)
+            await message.reply(
+                f"Message sent to {client.first_name} {client.last_name} "
+                f"(@{client.username}, Telegram ID: {client.telegram_user_id})."
+            )
+        else:
+            await message.reply("Client not found in the database.")
     else:
-        await message.reply("Client not found or not selected.")
-        await state.finish()
+        await message.reply("No client was selected.")
+    await state.finish()
 
 
 # @dp.message_handler(lambda message: message.reply_to_message and message.from_user.id == ADMIN_CHAT_ID)

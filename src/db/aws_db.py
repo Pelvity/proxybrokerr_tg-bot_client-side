@@ -14,11 +14,12 @@ from src.bot.config import (
     DATABASE_TYPE, DATABASE_NAME, DATABASE_USERNAME, DATABASE_PASSWORD, DATABASE_HOST,
     SSH_HOST, SSH_PORT, SSH_USER, SSH_PKEY, USE_SSH, DB_PORT
 )
+from src.db.repositories.user_repositories import UserRepository
+from src.db.base import Base
 
 logger = logging.getLogger(__name__)
 
 # Define the base model for your database tables
-Base = declarative_base()
 
 class AWSRDSService:
     def __init__(self):
@@ -77,7 +78,7 @@ class AWSRDSService:
             logger.info(f"SSH Tunnel established. Local port: {ssh_tunnel.local_bind_port}")
 
             db_url = f"mysql+pymysql://{DATABASE_USERNAME}:{DATABASE_PASSWORD}@127.0.0.1:{ssh_tunnel.local_bind_port}/{DATABASE_NAME}"
-            engine = create_engine(db_url, poolclass=QueuePool, pool_size=1, max_overflow=3, pool_timeout=30)
+            engine = create_engine(db_url, poolclass=QueuePool, pool_size=3, max_overflow=6, pool_timeout=30)
             return engine, ssh_tunnel
         except Exception as e:
             logger.error(f"Failed to establish SSH tunnel: {str(e)}")
@@ -89,17 +90,20 @@ class AWSRDSService:
         return engine, None
 
     @contextmanager
-    def get_session(self):
+    def get_repository(self, repo_class):
         session = self.Session()
         try:
-            yield session
-            session.commit()
+            yield repo_class(session)
+            #session.commit()
         except:
             session.rollback()
             raise
         finally:
             session.close()
-
+            
+    def get_user_repository(self):
+        return self.get_repository(UserRepository)
+    
     def create_tables(self):
         logger.info("Creating database tables.")
         from src.db.models.db_models import Base

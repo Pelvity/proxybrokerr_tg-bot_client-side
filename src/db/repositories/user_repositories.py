@@ -17,7 +17,6 @@ class UserRepository:
         self.session = session
 
     def get_or_create_user(self, message, user_type=UserType.TELEGRAM.value):
-        """Gets or creates a User, tracking changes in UserHistory."""
         try:
             timezone = pytz.timezone(USER_TIMEZONE)
 
@@ -28,34 +27,49 @@ class UserRepository:
                     'username': message.from_user.username,
                     'first_name': message.from_user.first_name,
                     'last_name': message.from_user.last_name,
-                    'joined_at': message.date.astimezone(pytz.utc),  # Store as UTC
-                    'last_message_at': message.date.astimezone(pytz.utc),  # Store as UTC
+                    'joined_at': message.date.astimezone(pytz.utc),
+                    'last_message_at': message.date.astimezone(pytz.utc),
                     'user_type': user_type
                 }
             else:
                 user_data = {
                     'user_type': user_type,
-                    'joined_at': datetime.now(pytz.utc),  # Store as UTC
+                    'joined_at': datetime.now(pytz.utc),
                 }
 
-            try:
-                user = self.session.query(User).filter_by(telegram_user_id=user_data['telegram_user_id']).one()
-                created = False
-            except NoResultFound:
+            user = self.session.query(User).filter_by(telegram_user_id=user_data['telegram_user_id']).first()
+            
+            if not user:
                 user = User(**user_data)
                 self.session.add(user)
-                self.session.commit()
-                created = True
-
-            if not created:
+                self.session.flush()  # This will assign an ID if it's a new user
+            else:
                 self._update_user_and_log_history(user, user_data, timezone)
 
-            return user
+            # Explicitly load all the attributes we need
+            self.session.refresh(user)
+            
+            # Create a dictionary with all the user data we need
+            user_dict = {
+                'id': user.id,
+                'telegram_user_id': user.telegram_user_id,
+                'telegram_chat_id': user.telegram_chat_id,
+                'username': user.username,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'joined_at': user.joined_at,
+                'last_message_at': user.last_message_at,
+                'user_type': user.user_type
+            }
+
+            return user_dict
 
         except Exception as e:
             logging.exception(f"Error getting or creating user: {e}")
+            self.session.rollback()
             return None
-
+    
+    
     def get_or_create_user_by_username(self, session, username: str) -> Optional[User]:
         """Gets or creates a User based on username, handling potential "@" prefix."""
         try:
@@ -141,19 +155,11 @@ class UserRepository:
             return None, False
 
     def get_all_users(self) -> List[User]:
-        """Gets all users from the database."""
         return self.session.query(User).all()
 
     def get_user_by_id(self, user_id: int) -> Optional[User]:
         """Gets a user by ID."""
         return self.session.query(User).get(user_id)
-    # def get_user_proxies(self, user_id: int) -> List[DBProxy]:
-    #     return (
-    #         self.session.query(DBProxy)
-    #         .filter_by(user_id=user_id)
-    #         .all()
-    #     )
-    
     
     def get_user_by_telegram_user_id(self, telegram_user_id: int) -> Optional[User]:
         """Gets a user by Telegram user ID."""

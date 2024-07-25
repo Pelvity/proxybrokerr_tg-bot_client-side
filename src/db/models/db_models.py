@@ -7,7 +7,7 @@ from enum import Enum
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from src.db.azure_db import Base as AzureBase
-from src.db.aws_db import Base as AWSBase
+from src.db.base import Base as AWSBase
 
 def current_datetime_utc():
     return datetime.now(timezone.utc).replace(microsecond=0)

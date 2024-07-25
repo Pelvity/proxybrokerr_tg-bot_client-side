@@ -1,3 +1,4 @@
+from venv import logger
 from aiogram import types
 from functools import partial
 from aiogram.dispatcher.filters import Command, Text
@@ -17,6 +18,7 @@ from src.utils.helpers import forward_message_to_admin
 from src.bot.handlers.payment_handlers import *
 from src.utils.payment_utils import *
 from src.services.payment_service import *
+from src.db.aws_db import aws_rds_service
 
 
 @dp.message_handler(lambda message: message.from_user.id != ADMIN_CHAT_ID, commands=['start'])
@@ -38,27 +40,31 @@ async def agreement_command(message: types.Message):
 
 @dp.message_handler(lambda message: message.text == "🌐 My Connections")
 async def my_proxy_command(message: types.Message):
-    # user_id = message.from_user.id
-    # user_username = message.from_user.username
-    # first_name = message.from_user.first_name
-    # last_name = message.from_user.last_name
+    try:
+        user = None
+        user_connections = []
 
-    with database.get_session() as session:
-        user_repository = UserRepository(session)
-        user = user_repository.get_or_create_user(message) # Get or create the user
-        
-        #proxy_repository = ProxyRepository(session)
-        #user_proxies = proxy_repository.get_user_proxies(user.id)
-        connection_repository = ConnectionRepository(session)
-        user_connections = connection_repository.get_user_connections(user.id)
+        with aws_rds_service.get_repository(UserRepository) as user_repo:
+            user = user_repo.get_or_create_user(message)  # Get or create the user
 
-    if not user_connections:
+        if user:
+            with aws_rds_service.get_repository(ConnectionRepository) as connection_repo:
+                user_connections = connection_repo.get_user_connections(user['id'])
+
+        if not user_connections:
+            await bot.send_message(
+                chat_id=message.chat.id, 
+                text="You have no proxies\nBuy it directly:\nhttps://t.me/proxybrokerr"
+            )
+        else:
+            await send_proxies(message.chat.id, user_connections)
+
+    except Exception as e:
+        logger.error(f"Error in my_proxy_command: {str(e)}")
         await bot.send_message(
-            chat_id=message.chat.id, 
-            text="You have no proxies\nBuy it directly:\nhttps://t.me/proxybrokerr"
+            chat_id=message.chat.id,
+            text="An error occurred while fetching your connections. Please try again later."
         )
-    else:
-        await send_proxies(message.chat.id, user_connections)
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith('connection_'))
