@@ -10,29 +10,28 @@ import pytz
 # Dictionary to map forwarded admin messages to original user messages
 forwarded_message_mapping = {}
 
-async def update_user_last_message(message: types.Message):
-    if message.from_user and message.chat.id != ADMIN_CHAT_ID:
-        session = database.Session()
-        try:
-            user_repository = UserRepository(session)
-            user_repository._get_or_create_user_by_telegram_id(message.from_user.id)
-            user = user_repository.get_user_by_telegram_user_id(message.from_user.id)
-            if user:
-                user.last_message_at = datetime.now(pytz.utc)
-                session.commit()
-        except Exception as e:
-            session.rollback()
-            logging.error(f"Error updating user last message: {e}")
-        finally:
-            session.close()
-
 class ForwardToAdminMiddleware(BaseMiddleware):
     def __init__(self):
         super(ForwardToAdminMiddleware, self).__init__()
 
     async def on_post_process_message(self, message: types.Message, results, data: dict):
-        await update_user_last_message(message)
-        await self.forward_message_to_admin(message)
+        await self.update_user_and_forward(message)
+
+    async def update_user_and_forward(self, message: types.Message):
+        if message.from_user and message.chat.id != ADMIN_CHAT_ID:
+            session = database.Session()
+            try:
+                user_repository = UserRepository(session)
+                user = user_repository.get_or_create_user(message)
+                if user:
+                    user['last_message_at'] = datetime.now(pytz.utc)
+                    session.commit()
+                await self.forward_message_to_admin(message)
+            except Exception as e:
+                session.rollback()
+                logging.error(f"Error updating user and forwarding message: {e}")
+            finally:
+                session.close()
 
     async def forward_message_to_admin(self, message: types.Message):
         bot = Bot.get_current()
