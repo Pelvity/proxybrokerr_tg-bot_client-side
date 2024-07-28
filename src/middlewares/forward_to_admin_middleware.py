@@ -15,6 +15,7 @@ async def update_user_last_message(message: types.Message):
         session = database.Session()
         try:
             user_repository = UserRepository(session)
+            user_repository._get_or_create_user_by_telegram_id(message.from_user.id)
             user = user_repository.get_user_by_telegram_user_id(message.from_user.id)
             if user:
                 user.last_message_at = datetime.now(pytz.utc)
