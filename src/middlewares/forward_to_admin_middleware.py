@@ -47,7 +47,7 @@ class ForwardToAdminMiddleware(BaseMiddleware):
             if client_username:
                 header_text = f"@{client_username}\nChat ID:{client_chat_id}\nTG:{message.from_id}"
             else:
-                header_text = f"{client_name} (Chat ID: {client_chat_id})"
+                header_text = f"{client_name}\nChat ID:{client_chat_id}\nTG:{message.from_id}"
 
             forwarded_message = None
 
