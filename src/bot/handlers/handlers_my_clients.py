@@ -203,7 +203,6 @@ async def admin_send_message_to_client(message: types.Message, state: FSMContext
 #@dp.message_handler(lambda message: message.reply_to_message and message.from_user.id == ADMIN_CHAT_ID)
 @dp.message_handler(content_types=ContentTypes.ANY)
 async def handle_admin_reply(message: types.Message):
-    logging.info("!! handle_admin_reply")
     if message.reply_to_message and message.from_user.id == ADMIN_CHAT_ID:
         original_message = forwarded_message_mapping.get(message.reply_to_message.message_id)
         if original_message:
