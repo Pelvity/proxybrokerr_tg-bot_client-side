@@ -155,7 +155,7 @@ class DBProxy(Base):
 class DBHost(Base):
     __tablename__ = 'Hosts'
     id = Column(Integer, primary_key=True, autoincrement=True)
-    host_ip = Column(String(255), nullable=False, unique=True)
+    ip_address = Column(String(255), nullable=False, unique=True)
     country_code = Column(String(10), nullable=False)
     description = Column(String(255), nullable=True)
 
@@ -164,7 +164,7 @@ class DBHost(Base):
     def to_dict(self):
         return{
             'id': self.id,
-            'host_ip': self.host_ip,
+            'host_ip': self.ip_address,
             'country_code': self.country_code,
         }
 
@@ -198,6 +198,9 @@ class DBProxyConnection(Base):
             'id': str(self.id) if self.id is not None else None,
             'user': self.user.to_dict() if self.user else None,
             'expiration_date': self.expiration_date.isoformat() if self.expiration_date else None,
+            'connection_type': self.connection_type if self.connection_type else None,
+            'proxy_id': self.proxy_id if self.proxy_id else None,
+            'password': self.password if self.password else None,
             'login': self.login,
             'port': self.port,
             'host': self.host.to_dict() if self.host else None,

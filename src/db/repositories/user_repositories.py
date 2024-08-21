@@ -71,21 +71,18 @@ class UserRepository:
     
     
     def get_or_create_user_by_username(self, session, username: str) -> Optional[User]:
-        """Gets or creates a User based on username, handling potential "@" prefix."""
         try:
-            username = username.lstrip('@')  # Remove leading "@" if present
-
+            username = username.lstrip('@')
             user = session.query(User).filter_by(username=username).first()
             if user is None:
-                user = User(username=username)  # Basic User creation
+                user = User(username=username, user_type=UserType.TELEGRAM.value)
                 session.add(user)
                 session.commit()
                 print(f"Created new User with username: {username}")
             return user
-
         except Exception as e:
             print(f"Error getting or creating user by username: {e}")
-            return None 
+            return None
         
     def _update_user_and_log_history(self, user, user_data, timezone):
         """Updates user attributes and logs changes to UserHistory."""
@@ -114,10 +111,10 @@ class UserRepository:
         """Updates user attributes based on message data."""
         try:
             timezone = pytz.timezone(USER_TIMEZONE)
-            if user.telegram_chat_id != message.chat.id:
-                user.telegram_chat_id = message.chat.id
+            if user['telegram_chat_id'] != message.chat.id:
+                user['telegram_chat_id'] = message.chat.id
 
-            user.last_message_at = message.date.astimezone(pytz.utc)  # Convert to UTC before saving
+            user['last_message_at'] = message.date.astimezone(pytz.utc)  # Convert to UTC before saving
             self.session.commit()
 
         except Exception as e:
@@ -154,8 +151,16 @@ class UserRepository:
             print(f"Error getting or creating user: {e}")
             return None, False
 
-    def get_all_users(self) -> List[User]:
-        return self.session.query(User).all()
+    def get_all_users(self) -> Tuple[List[User], List[User]]:
+        active_users = self.session.query(User).filter_by(is_active=True).all()
+        inactive_users = self.session.query(User).filter_by(is_active=False).order_by(User.id.desc()).limit(5).all()
+        return active_users, inactive_users
+    
+    def get_active_users(self) -> List[User]:
+        return self.session.query(User).filter_by(is_active=True).all()
+
+    def get_inactive_users(self) -> List[User]:
+        return self.session.query(User).filter_by(is_active=False).all()
 
     def get_user_by_id(self, user_id: int) -> Optional[User]:
         """Gets a user by ID."""

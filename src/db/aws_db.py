@@ -15,6 +15,7 @@ from src.bot.config import (
     SSH_HOST, SSH_PORT, SSH_USER, SSH_PKEY, USE_SSH, DB_PORT
 )
 from src.db.repositories.user_repositories import UserRepository
+from src.db.repositories.connection_repositories import ConnectionRepository
 from src.db.base import Base
 
 logger = logging.getLogger(__name__)
@@ -102,8 +103,11 @@ class AWSRDSService:
             session.close()
             
     def get_user_repository(self):
-        return self.get_repository(UserRepository)
-    
+        return self.get_repository(UserRepository)    
+
+    def get_connection_repository(self):
+        return self.get_repository(ConnectionRepository)    
+
     def create_tables(self):
         logger.info("Creating database tables.")
         from src.db.models.db_models import Base

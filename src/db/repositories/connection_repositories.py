@@ -23,6 +23,7 @@ class ConnectionRepository:
         
         return query.all()
 
-    def get_connection_by_id(self, connection_id: str) -> Optional[DBProxyConnection]:
-        """Retrieves a connection by its ID."""
-        return self.session.query(DBProxyConnection).filter_by(id=connection_id).first()
+    def get_connection_by_id(self, connection_id: str) -> Optional[dict]:
+        """Retrieves a connection by its ID and returns it as a dictionary."""
+        connection = self.session.query(DBProxyConnection).filter_by(id=connection_id).first()
+        return connection.to_dict() if connection else None

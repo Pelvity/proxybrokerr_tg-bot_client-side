@@ -26,7 +26,7 @@ def admin_main_menu():
         keyboard=[
             [KeyboardButton(text="🌐 My Connections"), KeyboardButton(text="ℹ️ Info")],
             [KeyboardButton(text="💬 Support"), KeyboardButton(text="📜 Agreement")],
-            [KeyboardButton(text="👥 My Clients")]
+            [KeyboardButton(text="My Clients")]
         ]
     )
     return keyboard
@@ -135,6 +135,15 @@ def generate_days_keyboard(
 
     return keyboard
 
+def generate_connection_menu_keyboard(connection_id: str, proxy_id: str) -> InlineKeyboardMarkup:
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    # Add Restart Connection button with callback data containing connection_id and proxy_id
+    keyboard.add(InlineKeyboardButton(text="🔄 Restart Connection", callback_data=f"restart_connection:{connection_id}:{proxy_id}"))
+    
+    # You can add more buttons here
+    # keyboard.add(InlineKeyboardButton(text="Another Action", callback_data=f"another_action:{connection_id}:{proxy_id}"))
+    
+    return keyboard
 
 
 
