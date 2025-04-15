@@ -1,7 +1,6 @@
-# src/utils/logging_utils.py
-
 import logging
 import pytz
+from aiogram import types
 from .custom_logging import WarsawTimeFormatter, CustomLoggingFilter
 
 def create_custom_logger():
@@ -30,15 +29,37 @@ def create_custom_logger():
 
     return custom_logger
 
-def log_user_interaction(message, custom_logger):
+def log_user_interaction(message: types.Message, custom_logger):
     user_username = message.from_user.username if message.from_user else "Unknown"
-    client_ip = str(message.from_user.id) if message.from_user else "Unknown"  # Convert to string
-    user_message = message.text or "No text"
-    
+    client_ip = str(message.from_user.id) if message.from_user else "Unknown"
     chat_type = message.chat.type
     chat_id = message.chat.id
     message_id = message.message_id
     
+    # Determine message content type and extract details
+    if message.text:
+        user_message = f"Text: {message.text}"
+    elif message.photo:
+        user_message = "Photo received"
+    elif message.audio:
+        user_message = f"Audio received: {message.audio.file_id}"
+    elif message.document:
+        user_message = f"Document received: {message.document.file_name}"
+    elif message.video:
+        user_message = f"Video received: {message.video.file_id}"
+    elif message.voice:
+        user_message = f"Voice message received: {message.voice.file_id}"
+    elif message.sticker:
+        user_message = f"Sticker received: {message.sticker.emoji}"
+    elif message.contact:
+        user_message = f"Contact shared: {message.contact.phone_number} - {message.contact.first_name}"
+    elif message.location:
+        user_message = f"Location shared: Latitude {message.location.latitude}, Longitude {message.location.longitude}"
+    elif message.venue:
+        user_message = f"Venue shared: {message.venue.title}, Address: {message.venue.address}"
+    else:
+        user_message = "Unknown content type"
+
     extra = {
         "client_ip": client_ip,
         "client_username": user_username,
@@ -47,4 +68,5 @@ def log_user_interaction(message, custom_logger):
     }
     
     logger = logging.LoggerAdapter(custom_logger, extra)
-    logger.info(f"->")
+    logger.info("Message: ->")
+

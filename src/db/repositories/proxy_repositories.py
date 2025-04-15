@@ -12,7 +12,7 @@ class ProxyRepository:
         """Retrieves proxies associated with a user, including days left."""
         proxies = (
             self.session.query(DBProxy)
-            .filter(DBProxy.user_id == user_id)
+            .filter(DBProxy.id == user_id)
             .all()
         )
         for proxy in proxies:

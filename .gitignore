@@ -1,5 +1,9 @@
 # Environment variables
 .env
+.venv
+
+# Virtual env
+myenv/
 
 # Logs
 logs/
@@ -14,3 +18,8 @@ node_modules/
 # Other common directories and files to ignore
 .DS_Store
 Thumbs.db
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
